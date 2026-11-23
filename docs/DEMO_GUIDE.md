@@ -22,3 +22,13 @@ Open `http://127.0.0.1:8000`. FastAPI serves the built frontend. For a separate 
 5. Select **Apply redactions** and download TXT, PDF, and the summary. Open the exported PDF and show that the private values are removed, the public contact remains, and the content is reflowed. The summary should discuss the equipment handoff and omit the explicitly kept public contact because the summary path masks Keeps.
 
 For a short failure demo, add the public contact as a manual redaction while it is marked Keep. Preview displays the conflict. Remove that entry and preview again.
+
+## Optional live Qwen demonstration
+
+Start the backend with Ollama enabled using the [README](../README.md#optional-local-slm-suggestions). Save the following fictional text as UTF-8 TXT and upload it:
+
+```text
+🙂 Luma Fenwick checked the inventory.
+```
+
+In the validated setup this produces a single additional Person candidate with **Ollama** evidence. Select the highlight and verify that Preview is disabled until you make a decision. Keep it and preview the unchanged text. Approve redaction, verify the old preview disappears, then preview again and release. The emoji triggers the existing verified TXT fallback on this fixture. Use the main fixture for the PDF export demonstration. Rehearse the live fixture on the demo machine because model output and spaCy predictions can vary with versions and configuration.

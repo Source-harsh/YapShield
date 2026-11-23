@@ -4,6 +4,10 @@ PrivyDoc assumes a trusted machine, browser session, and user. Run one Uvicorn w
 
 The service holds extracted review data in process memory. The frontend handles it in React state. Reviews expire after 15 minutes and can be discarded or consumed by release. The service caps active reviews at eight. API responses use `Cache-Control: no-store`, host validation, and a cross-site browser-request check. Process memory, browser memory, operating-system paging, and files the user downloads remain part of the local trust boundary.
 
+When opted in, upload-time detection sends potentially sensitive extracted excerpts to a separate local Ollama process. FastAPI pins `127.0.0.1:11434` and `qwen2.5:0.5b`, disables proxy discovery and redirects, and supplies no tools or model downloads. The application does not log prompts or raw responses. Treat the local daemon and its logging and cloud settings as part of the trust boundary.
+
+Model responses are untrusted. The application checks the schema, derives Unicode offsets from a unique exact quotation, rejects partial overlaps, and requires a review decision for each accepted suggestion. Prompt injection can still induce proposals for text actually present in the document, which is why source grounding and human review serve different purposes. No Ollama call occurs in preview, release, or summary validation.
+
 ## Release controls
 
 - Redaction replaces approved offsets in extracted text. Overlap with a Keep blocks release. An approved spelling may survive at an explicitly kept occurrence, with residual-value checks applied to the rest of the release.

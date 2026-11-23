@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from . import ollama_detection
 from .detection import MAX_CANDIDATES, Mention, detect_mentions
 from .documents import (
     MAX_TEXT, PdfLayoutError, canonical, count_value, export_pdf, extract, redact, residual_key, summarize, validate,
@@ -169,7 +170,7 @@ async def bounded_body(request: Request, limit: int) -> bytes:
 
 
 @app.post("/api/review", response_model=ReviewResponse)
-async def create_review(request: Request) -> dict:
+async def create_review(request: Request, response: Response) -> dict:
     content_type = request.headers.get("content-type", "").split(";")[0]
     if content_type not in {"application/pdf", "text/plain"}:
         raise HTTPException(415, "Provide a TXT or text-based PDF.")
@@ -182,6 +183,14 @@ async def create_review(request: Request) -> dict:
         groups, clusters = resolve(source, detect_mentions(source))
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
+    if ollama_detection.enabled():
+        baseline = [item for group in groups for item in group]
+        suggestions, status = await ollama_detection.suggest_people(source, baseline, limit=MAX_CANDIDATES - len(baseline))
+        response.headers["X-PrivyDoc-Ollama"] = status
+        expire_reviews()
+        if len(reviews) >= MAX_REVIEWS:
+            raise HTTPException(429, "Close an existing review or wait for it to expire.")
+        groups.extend([item] for item in suggestions)
     token = secrets.token_urlsafe(32)
     reviews[token] = Review(source, groups, monotonic() + TTL_SECONDS, clusters)
     line_starts = [0, *(match.end() for match in re.finditer("\n", source))]

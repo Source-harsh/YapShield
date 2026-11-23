@@ -1,0 +1,406 @@
+{
+  "model": "qwen2.5:0.5b",
+  "corpus": "pii_synthetic.json",
+  "documents": 11,
+  "initial_runtime": {
+    "version": "0.40.17",
+    "resident": {
+      "name": "qwen2.5:0.5b",
+      "model": "qwen2.5:0.5b",
+      "size": 483645193,
+      "digest": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen2",
+        "families": [
+          "qwen2"
+        ],
+        "parameter_size": "494.03M",
+        "quantization_level": "Q4_K_M"
+      },
+      "expires_at": "2026-11-23T23:29:40.0419238+05:30",
+      "size_vram": 483645193,
+      "context_length": 4096,
+      "runner": "llamacpp"
+    }
+  },
+  "final_runtime": {
+    "version": "0.40.17",
+    "resident": {
+      "name": "qwen2.5:0.5b",
+      "model": "qwen2.5:0.5b",
+      "size": 483645193,
+      "digest": "a8b0c51577010a279d933d14c2a8ab4b268079d44c5c8830c0a93900f1827c67",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen2",
+        "families": [
+          "qwen2"
+        ],
+        "parameter_size": "494.03M",
+        "quantization_level": "Q4_K_M"
+      },
+      "expires_at": "2026-11-23T23:30:50.0634048+05:30",
+      "size_vram": 483645193,
+      "context_length": 4096,
+      "runner": "llamacpp"
+    }
+  },
+  "evaluation_process_peak_rss_mib": 169.04296875,
+  "comparison": {
+    "rules_spacy": {
+      "scores": {
+        "true_positives": 45,
+        "false_positives": 2,
+        "false_negatives": 5,
+        "precision": 0.9574468085106383,
+        "recall": 0.9,
+        "f1": 0.9278350515463918
+      },
+      "trials": [
+        {
+          "document": "staff-directory",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 16.555,
+          "adapter_ms": null
+        },
+        {
+          "document": "student-record",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 14.35,
+          "adapter_ms": null
+        },
+        {
+          "document": "bank-letter",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 12.853,
+          "adapter_ms": null
+        },
+        {
+          "document": "meeting-notes",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 12.327,
+          "adapter_ms": null
+        },
+        {
+          "document": "engineering-log",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 0,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 12.636,
+          "adapter_ms": null
+        },
+        {
+          "document": "customer-message",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 3,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 13.655,
+          "adapter_ms": null
+        },
+        {
+          "document": "sparse-record",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 13.786,
+          "adapter_ms": null
+        },
+        {
+          "document": "india-campus-register",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 14.815,
+          "adapter_ms": null
+        },
+        {
+          "document": "india-employment-record",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 14.85,
+          "adapter_ms": null
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 16.38,
+          "adapter_ms": null
+        },
+        {
+          "document": "india-inventory-negatives",
+          "http": 200,
+          "ollama": null,
+          "baseline_count": 1,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 19.841,
+          "adapter_ms": null
+        }
+      ],
+      "median_upload_ms": 14.35,
+      "median_adapter_ms": null,
+      "additional_candidates": 0
+    },
+    "rules_spacy_qwen": {
+      "scores": {
+        "true_positives": 45,
+        "false_positives": 2,
+        "false_negatives": 5,
+        "precision": 0.9574468085106383,
+        "recall": 0.9,
+        "f1": 0.9278350515463918
+      },
+      "trials": [
+        {
+          "document": "staff-directory",
+          "http": 200,
+          "ollama": "completed",
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 760.029,
+          "adapter_ms": 745.712
+        },
+        {
+          "document": "student-record",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 1015.382,
+          "adapter_ms": 992.231
+        },
+        {
+          "document": "bank-letter",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 421.537,
+          "adapter_ms": 407.789
+        },
+        {
+          "document": "meeting-notes",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 566.27,
+          "adapter_ms": 549.904
+        },
+        {
+          "document": "engineering-log",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 0,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 944.51,
+          "adapter_ms": 931.079
+        },
+        {
+          "document": "customer-message",
+          "http": 200,
+          "ollama": "completed",
+          "baseline_count": 3,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 434.365,
+          "adapter_ms": 422.031
+        },
+        {
+          "document": "sparse-record",
+          "http": 200,
+          "ollama": "completed",
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 408.507,
+          "adapter_ms": 393.844
+        },
+        {
+          "document": "india-campus-register",
+          "http": 200,
+          "ollama": "completed",
+          "baseline_count": 6,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 427.966,
+          "adapter_ms": 413.707
+        },
+        {
+          "document": "india-employment-record",
+          "http": 200,
+          "ollama": "completed",
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 395.324,
+          "adapter_ms": 380.399
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 5,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 654.514,
+          "adapter_ms": 631.873
+        },
+        {
+          "document": "india-inventory-negatives",
+          "http": 200,
+          "ollama": "fallback",
+          "baseline_count": 1,
+          "accepted_count": 0,
+          "suggestions": [],
+          "explicit_decision_required": null,
+          "upload_ms": 708.739,
+          "adapter_ms": 693.58
+        }
+      ],
+      "median_upload_ms": 566.27,
+      "median_adapter_ms": 549.904,
+      "additional_candidates": 0
+    }
+  },
+  "smoke": {
+    "full_name": {
+      "http": 200,
+      "ollama": "completed",
+      "baseline_count": 1,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 392.209,
+      "adapter_ms": 382.015
+    },
+    "initials": {
+      "http": 200,
+      "ollama": "completed",
+      "baseline_count": 1,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 403.096,
+      "adapter_ms": 393.973
+    },
+    "multiple_people": {
+      "http": 200,
+      "ollama": "completed",
+      "baseline_count": 2,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 415.797,
+      "adapter_ms": 404.998
+    },
+    "repeated_name": {
+      "http": 200,
+      "ollama": "fallback",
+      "baseline_count": 2,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 419.217,
+      "adapter_ms": 404.452
+    },
+    "no_names": {
+      "http": 200,
+      "ollama": "fallback",
+      "baseline_count": 0,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 516.825,
+      "adapter_ms": 501.15
+    },
+    "prompt_injection": {
+      "http": 200,
+      "ollama": "fallback",
+      "baseline_count": 1,
+      "accepted_count": 0,
+      "suggestions": [],
+      "explicit_decision_required": null,
+      "upload_ms": 443.775,
+      "adapter_ms": 433.43
+    },
+    "unicode_novel": {
+      "http": 200,
+      "ollama": "completed",
+      "baseline_count": 0,
+      "accepted_count": 1,
+      "suggestions": [
+        {
+          "kind": "Person",
+          "quote": "Luma Fenwick",
+          "start": 2,
+          "end": 14,
+          "exact_and_offsets_valid": true
+        }
+      ],
+      "explicit_decision_required": true,
+      "upload_ms": 442.988,
+      "adapter_ms": 433.257
+    }
+  }
+}

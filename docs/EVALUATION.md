@@ -27,6 +27,8 @@ PDF export retypesets sanitized text and discards the input layout. Scanned and 
 
 ## Final quality gate
 
+The gate below records Phase 9. See [local Qwen validation](#local-qwen-validation) for the later branch results.
+
 | Check | Result |
 | --- | --- |
 | Backend with real spaCy enabled | 111 passed, 0 skipped |
@@ -47,4 +49,39 @@ Remove-Item Env:PRIVYDOC_RULES_ONLY -ErrorAction SilentlyContinue
 $env:PRIVYDOC_RULES_ONLY = '1'
 .venv/Scripts/python.exe -B -m pytest -q -rs -p no:cacheprovider
 Remove-Item Env:PRIVYDOC_RULES_ONLY
+```
+
+## Local Qwen validation
+
+The comparison reused the unchanged 11-document `pii_synthetic.json` corpus. Both modes used the real spaCy model and production FastAPI review path. Exact matches require the same document, entity type, and Unicode start and exclusive end. Each mode uploaded each fixture once using FastAPI TestClient, with spaCy preloaded. The upload timings include in-process HTTP handling. Adapter timings include the loopback Ollama call, parsing, and grounding. These small synthetic samples do not establish real-world accuracy.
+
+| Mode | TP / FP / FN | Precision | Recall | F1 | Median upload | Median adapter | Added candidates |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Rules plus spaCy | 45 / 2 / 5 | 95.74% | 90.00% | 92.78% | 14.350 ms | — | 0 |
+| Rules plus spaCy plus Qwen | 45 / 2 / 5 | 95.74% | 90.00% | 92.78% | 566.270 ms | 549.904 ms | 0 |
+
+Ollama 0.40.17 reported the local `qwen2.5:0.5b` model already resident, so cold startup was not isolated. Reported resident model size was 483,645,193 bytes, approximately 461 MiB. Overall evaluation-process peak RSS across both modes was 169.04 MiB, excluding the separate Ollama process. On the corpus, five opted-in requests completed without new candidates and six fell back. The original two-name fixture had previously fallen back because Qwen’s valid span exactly duplicated a spaCy candidate. Exact baseline duplicates are now ignored. Partial overlaps and other validation failures still discard the optional batch.
+
+| Fictional API smoke test | HTTP | Ollama status | Baseline | Added | Source and offsets | Decision required |
+| --- | ---: | --- | ---: | ---: | --- | --- |
+| Full name | 200 | completed | 1 | 0 | — | — |
+| Initial-based name | 200 | completed | 1 | 0 | — | — |
+| Multiple people | 200 | completed | 2 | 0 | — | — |
+| Repeated name | 200 | fallback | 2 | 0 | — | — |
+| No names | 200 | fallback | 0 | 0 | — | — |
+| Prompt-injection-like text | 200 | fallback | 1 | 0 | — | — |
+| Unicode novel name | 200 | completed | 0 | 1 | Exact `Luma Fenwick`, [2, 14) | Yes |
+
+Chromium confirmed that the real suggestion appeared with Ollama evidence, required a decision, could be kept, and could then be approved for redaction and released after a fresh preview. The test saw no browser HTTP requests outside the local app. A separate live connection-refusal check against an isolated loopback port returned HTTP 200 with fallback and retained the baseline candidate. The existing release and sanitized-summary tests passed. The daemon's background traffic and logs were outside the application checks.
+
+The full backend gate passed 141 tests with zero skips. Forcing rules-only with the Ollama flag on passed 139 tests and intentionally skipped two real-spaCy tests. The two frontend unit tests and both Chromium workflows passed, as did TypeScript, the production build, dependency checks, and Git's whitespace check.
+
+The [new evidence JSON](../evaluation/ollama_results.json) contains per-upload timings and grounding checks. Reproduce it with a new output filename. Run the browser test once in each mode against the built frontend:
+
+```powershell
+.venv/Scripts/python.exe -B -m evaluation.measure_ollama --output evaluation/ollama_reproduction.json
+node --test frontend/tests/review.browser.mjs
+$env:PRIVYDOC_BROWSER_LIVE_OLLAMA = '1'
+node --test frontend/tests/review.browser.mjs
+Remove-Item Env:PRIVYDOC_BROWSER_LIVE_OLLAMA
 ```
