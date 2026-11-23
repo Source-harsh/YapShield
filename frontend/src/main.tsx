@@ -4,7 +4,16 @@ import { createRoot } from "react-dom/client";
 import "./style.css";
 
 type Decision = "redact" | "keep";
-type Mention = { text: string; source: string; line: number };
+type Mention = {
+  id: string;
+  text: string;
+  kind: string;
+  start: number;
+  end: number;
+  source: string;
+  line: number;
+  evidence: { source: string; rule: string }[];
+};
 type Review = { token: string; text: string; groups: { id: number; kind: string; mentions: Mention[] }[] };
 type Release = { text: string; summary: string; pdf: string | null; pdf_error: string | null };
 
@@ -192,8 +201,8 @@ function App() {
                         <legend>{group.kind} · {group.mentions.length} {group.mentions.length === 1 ? "mention" : "mentions"}</legend>
                         <details>
                           <summary>{group.mentions[0].text}</summary>
-                          <ul>{group.mentions.map((mention, index) => (
-                            <li key={index}>{mention.text} <span className="muted">· Line {mention.line} · {mention.source}</span></li>
+                          <ul>{group.mentions.map((mention) => (
+                            <li key={mention.id}>{mention.text} <span className="muted">· Line {mention.line} · {mention.evidence.map(({ source, rule }) => `${source} (${rule})`).join(" · ") || mention.source}</span></li>
                           ))}</ul>
                         </details>
                         <div className="controls">

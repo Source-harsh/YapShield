@@ -4,6 +4,7 @@ import asyncio
 import base64
 import re
 import secrets
+from bisect import bisect_right
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
@@ -85,6 +86,34 @@ class ReleaseRequest(BaseModel):
     manual: Annotated[list[Annotated[str, Field(min_length=2, max_length=500)]], Field(max_length=50)]
 
 
+class DetectionEvidence(BaseModel):
+    source: str
+    rule: str
+
+
+class ReviewMention(BaseModel):
+    id: str
+    text: str
+    kind: str
+    start: int
+    end: int
+    source: str
+    line: int
+    evidence: list[DetectionEvidence]
+
+
+class ReviewGroup(BaseModel):
+    id: int
+    kind: str
+    mentions: list[ReviewMention]
+
+
+class ReviewResponse(BaseModel):
+    token: str
+    text: str
+    groups: list[ReviewGroup]
+
+
 ReviewToken = Annotated[str, Header(alias="X-Review-Token", min_length=1, max_length=100)]
 
 
@@ -97,7 +126,7 @@ async def bounded_body(request: Request, limit: int) -> bytes:
     return bytes(body)
 
 
-@app.post("/api/review")
+@app.post("/api/review", response_model=ReviewResponse)
 async def create_review(request: Request) -> dict:
     content_type = request.headers.get("content-type", "").split(";")[0]
     if content_type not in {"application/pdf", "text/plain"}:
@@ -113,6 +142,7 @@ async def create_review(request: Request) -> dict:
         raise HTTPException(422, str(error)) from None
     token = secrets.token_urlsafe(32)
     reviews[token] = Review(source, groups, monotonic() + TTL_SECONDS)
+    line_starts = [0, *(match.end() for match in re.finditer("\n", source))]
     return {
         "token": token,
         "text": source,
@@ -121,7 +151,16 @@ async def create_review(request: Request) -> dict:
                 "id": index,
                 "kind": group[0].kind,
                 "mentions": [
-                    {"text": source[item.start:item.end], "source": item.source, "line": source.count("\n", 0, item.start) + 1}
+                    {
+                        "id": f"{item.start}:{item.end}:{item.kind}",
+                        "text": source[item.start:item.end],
+                        "kind": item.kind,
+                        "start": item.start,
+                        "end": item.end,
+                        "source": item.source,
+                        "line": bisect_right(line_starts, item.start),
+                        "evidence": [evidence._asdict() for evidence in item.evidence],
+                    }
                     for item in group
                 ],
             }

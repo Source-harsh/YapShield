@@ -1,0 +1,37 @@
+[
+  {
+    "id": "staff-directory",
+    "text": "Name: Jane Chen\nEmployee ID: EMP1023\nEmail: jane.chen+staff@example.org\nDesk: +1 (202) 555-0144\nJ. Chen will review the release. Jane signed the checklist.",
+    "entities": [["Person", "Jane Chen"], ["Employee ID", "EMP1023"], ["Email", "jane.chen+staff@example.org"], ["Phone", "+1 (202) 555-0144"], ["Person", "J. Chen"], ["Person", "Jane signed", "Jane"]]
+  },
+  {
+    "id": "student-record",
+    "text": "Name: Élodie D’Arcy\nStudent ID: ABC-10482\nContact: elodie [at] campus [dot] example\nMobile: +44 7700 900123\nAddress: 47 Juniper Road Apt 2\nPalo Alto, CA 94301\nE D’Arcy signed the form.",
+    "entities": [["Person", "Élodie D’Arcy"], ["Student ID", "ABC-10482"], ["Email", "elodie [at] campus [dot] example"], ["Phone", "+44 7700 900123"], ["Address", "47 Juniper Road Apt 2\nPalo Alto, CA 94301"], ["Person", "E D’Arcy"]]
+  },
+  {
+    "id": "bank-letter",
+    "text": "Patient: Omar Rahman\nAccount Number: ACC-123456\nSSN: 321-54-9876\nPhone: +91 61234 56789\nReply to omar(at)mail(dot)example. Product Code: ACC-9901. Version 3.5.19.",
+    "entities": [["Person", "Omar Rahman"], ["Account ID", "ACC-123456"], ["US SSN", "321-54-9876"], ["Phone", "+91 61234 56789"], ["Email", "omar(at)mail(dot)example"]]
+  },
+  {
+    "id": "meeting-notes",
+    "text": "Name: Anika Shah\nName: Rohan Shah\nA Shah and R. Shah attended. Shah filed the follow-up. Product Update scheduled for 2026-11-23.",
+    "entities": [["Person", "Anika Shah"], ["Person", "Rohan Shah"], ["Person", "A Shah"], ["Person", "R. Shah"], ["Ambiguous name", "Shah filed", "Shah"]]
+  },
+  {
+    "id": "engineering-log",
+    "text": "Release Notes for 2026-11-23. Technical identifiers: job_2025550182, rev_321-54-9876, sha256:cd43a211. Product codes: EMP1023 and PRD-202-555-0182. Version 202.555.0182.4. Random number 2025550182.",
+    "entities": []
+  },
+  {
+    "id": "customer-message",
+    "text": "Mira Patel requested a copy. Forward it to m.patel@example.net or call +49 30 901820. Deliver to 15 Aspen Lane, Ithaca, NY 14850.",
+    "entities": [["Person", "Mira Patel"], ["Email", "m.patel@example.net"], ["Phone", "+49 30 901820"], ["Address", "15 Aspen Lane, Ithaca, NY 14850"]]
+  },
+  {
+    "id": "sparse-record",
+    "text": "Name: Rowan Park\nEmail: feedback@example.com\nStudent ID: 5201034\nEmployee ID: STAFF_52\nShip to PO Box 410, Boston, MA 02108. This park has excellent trails.",
+    "entities": [["Person", "Rowan Park"], ["Email", "feedback@example.com"], ["Student ID", "5201034"], ["Employee ID", "STAFF_52"], ["Address", "PO Box 410, Boston, MA 02108"]]
+  }
+]

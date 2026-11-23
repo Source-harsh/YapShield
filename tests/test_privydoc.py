@@ -62,7 +62,8 @@ def test_optional_ner_path(monkeypatch):
     text = "Mira Patel prepared the report."
     entity = SimpleNamespace(label_="PERSON", text="Mira Patel", start_char=0, end_char=10)
     monkeypatch.setattr(detection, "local_nlp", lambda: lambda _: SimpleNamespace(ents=[entity]))
-    assert detection.detect(text) == [[detection.Mention(0, 10, "Person", "spaCy")]]
+    [[mention]] = detection.detect(text)
+    assert (mention.start, mention.end, mention.kind, mention.source) == (0, 10, "Person", "spaCy")
 
 
 def test_pdf_release_drops_original_pdf_objects(client):
