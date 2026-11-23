@@ -1,6 +1,7 @@
 """Local candidate detection with conservative alias resolution."""
 
 import logging
+import os
 import re
 import unicodedata
 from collections.abc import Iterator
@@ -30,6 +31,11 @@ class Mention(NamedTuple):
 MAX_CANDIDATES = 750
 LOGGER = logging.getLogger(__name__)
 MODEL = "en_core_web_sm"
+PERSONAL_LOCATION = re.compile(
+    r"^[ \t]*(?:home city|hometown|place of birth|birthplace|(?:current )?residence)[ \t]*:[ \t]*",
+    re.IGNORECASE | re.MULTILINE,
+)
+LOCATION_LABELS = {"GPE", "LOC", "FAC"}
 NAME_WORD = r"[^\W\d_]+(?:[-’'][^\W\d_]+)*\.?"
 NAME_CONTEXT = re.compile(
     rf"(?:\b(?i:(?<!product )(?<!file )(?<!project )name|contact|author|patient)[ \t]*:"
@@ -97,6 +103,8 @@ RULES = (
 @lru_cache(maxsize=1)
 def local_nlp() -> "Language | None":
     try:
+        if os.environ.get("PRIVYDOC_RULES_ONLY") == "1":
+            return None
         if find_spec("spacy") is None or find_spec(MODEL) is None:
             return None
         import spacy
@@ -151,11 +159,21 @@ def detect_mentions(text: str, *, use_nlp: bool = True) -> list[Mention]:
     structured = [item for item in mentions if item.kind != "Person"]
     nlp = local_nlp() if use_nlp else None
     if nlp is not None:
+        personal_location_starts = {match.end() for match in PERSONAL_LOCATION.finditer(text)}
         for entity in nlp(text).ents:
-            if entity.label_ == "PERSON" and len(entity.text.split()) >= 2 and not any(
+            if entity.label_ == "PERSON" and "\n" not in entity.text and len(entity.text.split()) >= 2:
+                kind = "Person"
+            elif entity.label_ in LOCATION_LABELS and entity.start_char in personal_location_starts:
+                kind = "Location"
+            else:
+                continue
+            if not any(
                 item.start <= entity.start_char and entity.end_char <= item.end for item in structured
             ):
-                mentions.append(candidate(entity.start_char, entity.end_char, "Person", "spaCy", f"{MODEL} PERSON entity"))
+                reason = f"{MODEL} {entity.label_} entity"
+                if kind == "Location":
+                    reason += " in a personal location field"
+                mentions.append(candidate(entity.start_char, entity.end_char, kind, "spaCy", reason))
     mentions = fuse(mentions)
     if len(mentions) > MAX_CANDIDATES:
         raise ValueError("Too many candidates. Review the document in smaller sections.")

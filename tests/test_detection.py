@@ -1,3 +1,4 @@
+import os
 import re
 import sys
 from types import SimpleNamespace
@@ -97,15 +98,90 @@ def test_load_failure_and_absence(monkeypatch):
         load.cache_clear()
 
 
-def test_real_spacy_person_path():
+def test_rules_only_environment_skips_optional_package_lookup(monkeypatch):
+    load = detection.local_nlp
+    load.cache_clear()
+    monkeypatch.setenv("PRIVYDOC_RULES_ONLY", "1")
+    monkeypatch.setattr(detection, "find_spec", lambda _: pytest.fail("Rules-only mode looked up an optional package"))
+    try:
+        assert load() is None
+        assert spans("Student ID: STU202601") == [("Student ID", "STU202601")]
+    finally:
+        load.cache_clear()
+
+
+@pytest.fixture
+def real_spacy():
+    if os.environ.get("PRIVYDOC_RULES_ONLY") == "1":
+        pytest.skip("Real spaCy integration is disabled for this rules-only run")
     if detection.find_spec("spacy") is None or detection.find_spec(detection.MODEL) is None:
         pytest.skip("Optional spaCy package or English model is absent")
-    assert detection.local_nlp() is not None
+    model = detection.local_nlp()
+    assert model is not None
+    return model
+
+
+def test_real_spacy_person_path(real_spacy):
+    assert real_spacy.pipe_names == ["tok2vec", "ner"]
     text = "🙂 Barack Obama visited Paris."
     assert any(
         text[item.start:item.end] == "Barack Obama" and item.start == 2 and item.source == "spaCy"
         for group in detection.detect(text) for item in group
     )
+
+
+def test_real_model_candidates_require_review_and_export_verified_text(real_spacy):
+    text = ("🙂 The audit is complete.\nJosé Mourinho delivered the report.\n"
+            "Home city: Paris\nA conference was held in London.\nEmail: example@example.org\nName: Barack Obama")
+    with TestClient(api.app) as client:
+        response = client.post("/api/review", content=text.encode(), headers={"Content-Type": "text/plain"})
+        assert response.status_code == 200, response.text
+        review = response.json()
+        mentions = {item["text"]: item for group in review["groups"] for item in group["mentions"]}
+        for value, kind in (("José Mourinho", "Person"), ("Barack Obama", "Person"), ("Paris", "Location")):
+            item = mentions[value]
+            assert item["kind"] == kind
+            assert text[item["start"]:item["end"]] == value
+            assert any(entry["source"] == "spaCy" for entry in item["evidence"])
+        assert {entry["source"] for entry in mentions["Barack Obama"]["evidence"]} == {"spaCy", "Context rule"}
+        assert "London" not in mentions
+        headers = {"X-Review-Token": review["token"]}
+        payload = {"mention_decisions": {item["id"]: "keep" if value == "Paris" else "redact"
+                                         for value, item in mentions.items()},
+                   "links": {}, "manual": ["🙂 The"]}
+        missing_decision = dict(payload["mention_decisions"])
+        missing_decision.pop(mentions["Paris"]["id"])
+        assert client.post("/api/preview", headers=headers, json={**payload, "mention_decisions": missing_decision}).status_code == 422
+        preview = client.post("/api/preview", headers=headers, json=payload)
+        assert preview.status_code == 200, preview.text
+        headers["X-Preview-Receipt"] = preview.json()["receipt"]
+        response = client.post("/api/release", headers=headers, json=payload)
+        assert response.status_code == 200, response.text
+        release = response.json()
+        assert release["text"] == preview.json()["text"]
+        assert "Paris" in release["text"] and "Paris" not in release["summary"]
+        assert all(value not in release["text"] for value in ("José Mourinho", "Barack Obama", "example@example.org"))
+        assert release["pdf"]
+
+
+@pytest.mark.parametrize("label", ["GPE", "LOC", "FAC", "ORG"])
+def test_location_ner_requires_personal_context(monkeypatch, label):
+    text = "Birthplace: Alpha City\nConference: Beta City"
+    values = ("Alpha City", "Beta City")
+    entities = [SimpleNamespace(label_=label, text=value, start_char=text.index(value),
+                               end_char=text.index(value) + len(value)) for value in values]
+    monkeypatch.setattr(detection, "local_nlp", lambda: lambda _: SimpleNamespace(ents=entities))
+    expected = [("Location", "Alpha City")] if label != "ORG" else []
+    assert spans(text) == expected
+
+
+def test_ner_person_crossing_fields_does_not_extend_context_span(monkeypatch):
+    text = "Name: Jane Doe\nHome city: Paris"
+    value = "Jane Doe\nHome"
+    start = text.index(value)
+    entity = SimpleNamespace(label_="PERSON", text=value, start_char=start, end_char=start + len(value))
+    monkeypatch.setattr(detection, "local_nlp", lambda: lambda _: SimpleNamespace(ents=[entity]))
+    assert spans(text) == [("Person", "Jane Doe")]
 
 
 def test_api_fusion_and_overlapping_release(monkeypatch):

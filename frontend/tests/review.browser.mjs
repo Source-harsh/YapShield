@@ -21,8 +21,8 @@ async function waitFor(check, message) {
   throw new Error(message);
 }
 
-function launch(command, args, cwd) {
-  const child = spawn(command, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+function launch(command, args, cwd, env = process.env) {
+  const child = spawn(command, args, { cwd, env, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
   let log = "";
   child.stdout.on("data", (chunk) => { log += chunk; });
   child.stderr.on("data", (chunk) => { log += chunk; });
@@ -75,7 +75,8 @@ test("production review UI releases TXT and PDF through the complete workflow", 
   const input = join(scratch, "review.txt");
   const text = "🙂\nName: Jane Doe\nJ. Doe filed the report.\nEmail: demo@example.org\nCopy: demo@example.org\nCase: DEMO@example.org\nAccount Number: 202-555-0182";
   await writeFile(input, text, "utf8");
-  const backend = launch(python, ["-B", "-m", "uvicorn", "privydoc.api:app", "--host", "127.0.0.1", "--port", "0", "--no-access-log"], root);
+  const backend = launch(python, ["-B", "-m", "uvicorn", "privydoc.api:app", "--host", "127.0.0.1", "--port", "0", "--no-access-log"],
+    root, { ...process.env, PRIVYDOC_RULES_ONLY: "1" });
   const browser = launch(chromium, ["--headless", "--disable-background-networking", "--no-first-run", "--remote-debugging-port=0",
     "--window-size=1440,1000", `--user-data-dir=${profile}`, "about:blank"], root);
   let page;
@@ -230,9 +231,11 @@ test("production review UI releases TXT and PDF through the complete workflow", 
   await click(overlap);
   const firstOverlap = await evaluate(current);
   await press("r");
+  await selected("Approved for redaction");
   await click(overlap);
   assert.notEqual(await evaluate(current), firstOverlap);
   await press("s");
+  await selected("Kept");
   await click(".finish button");
   await waitForUi("document.querySelector('[role=alert]')?.textContent.includes('overlaps a mention marked Keep')");
   assert.equal(await evaluate(`!!document.querySelector("${preview}")`), false);

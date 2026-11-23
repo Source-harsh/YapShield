@@ -1,0 +1,790 @@
+{
+  "dataset": {
+    "documents": 14,
+    "characters": 2282,
+    "files": {
+      "pii_synthetic.json": "f70bd4f91f59ccd6bdc685cf016c3d62bc872f5ebd76a07d3eae4b0c20ab7861",
+      "pii_phase8_supplement.json": "f2b7e568a1cb7dbd878e69df72bf27f8843663ad5a6457f62c5dd7f3906dc643"
+    }
+  },
+  "environment": {
+    "os": "Windows-11-10.0.26300-SP0",
+    "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+    "logical_cpus": 16,
+    "python": "3.13.2",
+    "pymupdf": "1.28.2",
+    "fastapi": "0.165.0",
+    "machine": "AMD64",
+    "processor": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD"
+  },
+  "commands": [
+    "python -B -m evaluation.run_phase8 --output evaluation\\phase8_results.json",
+    "python -B -m evaluation.measure_detection --rules-only",
+    "python -B -m evaluation.benchmark_release"
+  ],
+  "phase6_corpus_rerun": {
+    "model": null,
+    "documents": 11,
+    "characters": 1896,
+    "timing_ms": {
+      "model_check_and_load": 0.0004000003173132427,
+      "first_corpus_pass": 4.298399999697722,
+      "median_corpus_pass": 3.904650000094989,
+      "runs": 30
+    },
+    "overall": {
+      "true_positives": 44,
+      "false_positives": 2,
+      "false_negatives": 6,
+      "precision": 0.9565217391304348,
+      "recall": 0.88,
+      "f1": 0.9166666666666666
+    },
+    "per_entity": {
+      "Account ID": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "Address": {
+        "true_positives": 3,
+        "false_positives": 1,
+        "false_negatives": 2,
+        "precision": 0.75,
+        "recall": 0.6,
+        "f1": 0.6666666666666666
+      },
+      "Ambiguous name": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "Email": {
+        "true_positives": 8,
+        "false_positives": 0,
+        "false_negatives": 1,
+        "precision": 1.0,
+        "recall": 0.8888888888888888,
+        "f1": 0.9411764705882353
+      },
+      "Employee ID": {
+        "true_positives": 4,
+        "false_positives": 0,
+        "false_negatives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "Person": {
+        "true_positives": 18,
+        "false_positives": 0,
+        "false_negatives": 1,
+        "precision": 1.0,
+        "recall": 0.9473684210526315,
+        "f1": 0.972972972972973
+      },
+      "Phone": {
+        "true_positives": 5,
+        "false_positives": 1,
+        "false_negatives": 2,
+        "precision": 0.8333333333333334,
+        "recall": 0.7142857142857143,
+        "f1": 0.7692307692307693
+      },
+      "Student ID": {
+        "true_positives": 3,
+        "false_positives": 0,
+        "false_negatives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      },
+      "US SSN": {
+        "true_positives": 1,
+        "false_positives": 0,
+        "false_negatives": 0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1": 1.0
+      }
+    },
+    "false_positives": [
+      {
+        "document": "india-campus-register",
+        "kind": "Address",
+        "start": 116,
+        "end": 127,
+        "text": "8 Lake Road"
+      },
+      {
+        "document": "india-inventory-negatives",
+        "kind": "Phone",
+        "start": 152,
+        "end": 164,
+        "text": "202-555-0131"
+      }
+    ],
+    "false_negatives": [
+      {
+        "document": "customer-message",
+        "kind": "Person",
+        "start": 0,
+        "end": 10,
+        "text": "Mira Patel"
+      },
+      {
+        "document": "customer-message",
+        "kind": "Phone",
+        "start": 71,
+        "end": 84,
+        "text": "+49 30 901820"
+      },
+      {
+        "document": "india-campus-register",
+        "kind": "Address",
+        "start": 105,
+        "end": 158,
+        "text": "Flat B-12, 8 Lake Road, Indiranagar, Bengaluru 560038"
+      },
+      {
+        "document": "india-employment-record",
+        "kind": "Address",
+        "start": 125,
+        "end": 162,
+        "text": "Plot 42, Sector 17, Chandigarh 160017"
+      },
+      {
+        "document": "india-employment-record",
+        "kind": "Phone",
+        "start": 104,
+        "end": 115,
+        "text": "09876543210"
+      },
+      {
+        "document": "unicode-initials-and-markers",
+        "kind": "Email",
+        "start": 140,
+        "end": 155,
+        "text": "thu＠example.org"
+      }
+    ]
+  },
+  "expanded_detection": {
+    "rules_plus_identity": {
+      "overall": {
+        "true_positives": 57,
+        "false_positives": 2,
+        "false_negatives": 7,
+        "precision": 0.9661016949152542,
+        "recall": 0.890625,
+        "f1": 0.926829268292683
+      },
+      "per_entity": {
+        "Account ID": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "Address": {
+          "true_positives": 3,
+          "false_positives": 1,
+          "false_negatives": 2,
+          "precision": 0.75,
+          "recall": 0.6,
+          "f1": 0.6666666666666666
+        },
+        "Ambiguous name": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "Email": {
+          "true_positives": 11,
+          "false_positives": 0,
+          "false_negatives": 1,
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "Employee ID": {
+          "true_positives": 4,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "Government ID": {
+          "true_positives": 0,
+          "false_positives": 0,
+          "false_negatives": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "Person": {
+          "true_positives": 22,
+          "false_positives": 0,
+          "false_negatives": 1,
+          "precision": 1.0,
+          "recall": 0.9565217391304348,
+          "f1": 0.9777777777777777
+        },
+        "Phone": {
+          "true_positives": 7,
+          "false_positives": 1,
+          "false_negatives": 2,
+          "precision": 0.875,
+          "recall": 0.7777777777777778,
+          "f1": 0.8235294117647058
+        },
+        "Student ID": {
+          "true_positives": 4,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "US SSN": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "false_positives": [
+        {
+          "document": "india-campus-register",
+          "kind": "Address",
+          "start": 116,
+          "end": 127,
+          "text": "8 Lake Road"
+        },
+        {
+          "document": "india-inventory-negatives",
+          "kind": "Phone",
+          "start": 152,
+          "end": 164,
+          "text": "202-555-0131"
+        }
+      ],
+      "false_negatives": [
+        {
+          "document": "customer-message",
+          "kind": "Person",
+          "start": 0,
+          "end": 10,
+          "text": "Mira Patel"
+        },
+        {
+          "document": "customer-message",
+          "kind": "Phone",
+          "start": 71,
+          "end": 84,
+          "text": "+49 30 901820"
+        },
+        {
+          "document": "government-identifier-shapes",
+          "kind": "Government ID",
+          "start": 30,
+          "end": 44,
+          "text": "0000 0000 0000"
+        },
+        {
+          "document": "india-campus-register",
+          "kind": "Address",
+          "start": 105,
+          "end": 158,
+          "text": "Flat B-12, 8 Lake Road, Indiranagar, Bengaluru 560038"
+        },
+        {
+          "document": "india-employment-record",
+          "kind": "Address",
+          "start": 125,
+          "end": 162,
+          "text": "Plot 42, Sector 17, Chandigarh 160017"
+        },
+        {
+          "document": "india-employment-record",
+          "kind": "Phone",
+          "start": 104,
+          "end": 115,
+          "text": "09876543210"
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "kind": "Email",
+          "start": 140,
+          "end": 155,
+          "text": "thu＠example.org"
+        }
+      ],
+      "median_corpus_ms": 4.830450000099518,
+      "runs": 30
+    },
+    "rules_without_identity": {
+      "overall": {
+        "true_positives": 46,
+        "false_positives": 2,
+        "false_negatives": 18,
+        "precision": 0.9583333333333334,
+        "recall": 0.71875,
+        "f1": 0.8214285714285714
+      },
+      "per_entity": {
+        "Account ID": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "Address": {
+          "true_positives": 3,
+          "false_positives": 1,
+          "false_negatives": 2,
+          "precision": 0.75,
+          "recall": 0.6,
+          "f1": 0.6666666666666666
+        },
+        "Ambiguous name": {
+          "true_positives": 0,
+          "false_positives": 0,
+          "false_negatives": 2,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "Email": {
+          "true_positives": 11,
+          "false_positives": 0,
+          "false_negatives": 1,
+          "precision": 1.0,
+          "recall": 0.9166666666666666,
+          "f1": 0.9565217391304348
+        },
+        "Employee ID": {
+          "true_positives": 4,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "Government ID": {
+          "true_positives": 0,
+          "false_positives": 0,
+          "false_negatives": 1,
+          "precision": null,
+          "recall": 0.0,
+          "f1": 0.0
+        },
+        "Person": {
+          "true_positives": 13,
+          "false_positives": 0,
+          "false_negatives": 10,
+          "precision": 1.0,
+          "recall": 0.5652173913043478,
+          "f1": 0.7222222222222222
+        },
+        "Phone": {
+          "true_positives": 7,
+          "false_positives": 1,
+          "false_negatives": 2,
+          "precision": 0.875,
+          "recall": 0.7777777777777778,
+          "f1": 0.8235294117647058
+        },
+        "Student ID": {
+          "true_positives": 4,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        },
+        "US SSN": {
+          "true_positives": 2,
+          "false_positives": 0,
+          "false_negatives": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0
+        }
+      },
+      "false_positives": [
+        {
+          "document": "india-campus-register",
+          "kind": "Address",
+          "start": 116,
+          "end": 127,
+          "text": "8 Lake Road"
+        },
+        {
+          "document": "india-inventory-negatives",
+          "kind": "Phone",
+          "start": 152,
+          "end": 164,
+          "text": "202-555-0131"
+        }
+      ],
+      "false_negatives": [
+        {
+          "document": "customer-message",
+          "kind": "Person",
+          "start": 0,
+          "end": 10,
+          "text": "Mira Patel"
+        },
+        {
+          "document": "customer-message",
+          "kind": "Phone",
+          "start": 71,
+          "end": 84,
+          "text": "+49 30 901820"
+        },
+        {
+          "document": "government-identifier-shapes",
+          "kind": "Government ID",
+          "start": 30,
+          "end": 44,
+          "text": "0000 0000 0000"
+        },
+        {
+          "document": "india-campus-register",
+          "kind": "Address",
+          "start": 105,
+          "end": 158,
+          "text": "Flat B-12, 8 Lake Road, Indiranagar, Bengaluru 560038"
+        },
+        {
+          "document": "india-campus-register",
+          "kind": "Person",
+          "start": 18,
+          "end": 26,
+          "text": "K. Menon"
+        },
+        {
+          "document": "india-employment-record",
+          "kind": "Address",
+          "start": 125,
+          "end": 162,
+          "text": "Plot 42, Sector 17, Chandigarh 160017"
+        },
+        {
+          "document": "india-employment-record",
+          "kind": "Phone",
+          "start": 104,
+          "end": 115,
+          "text": "09876543210"
+        },
+        {
+          "document": "meeting-notes",
+          "kind": "Ambiguous name",
+          "start": 63,
+          "end": 67,
+          "text": "Shah"
+        },
+        {
+          "document": "meeting-notes",
+          "kind": "Person",
+          "start": 34,
+          "end": 40,
+          "text": "A Shah"
+        },
+        {
+          "document": "meeting-notes",
+          "kind": "Person",
+          "start": 45,
+          "end": 52,
+          "text": "R. Shah"
+        },
+        {
+          "document": "repeated-contact-details",
+          "kind": "Person",
+          "start": 18,
+          "end": 26,
+          "text": "K. Menon"
+        },
+        {
+          "document": "similar-unicode-names",
+          "kind": "Ambiguous name",
+          "start": 35,
+          "end": 44,
+          "text": "Z. García"
+        },
+        {
+          "document": "staff-directory",
+          "kind": "Person",
+          "start": 96,
+          "end": 103,
+          "text": "J. Chen"
+        },
+        {
+          "document": "staff-directory",
+          "kind": "Person",
+          "start": 129,
+          "end": 133,
+          "text": "Jane"
+        },
+        {
+          "document": "student-record",
+          "kind": "Person",
+          "start": 159,
+          "end": 167,
+          "text": "E D’Arcy"
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "kind": "Email",
+          "start": 140,
+          "end": 155,
+          "text": "thu＠example.org"
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "kind": "Person",
+          "start": 22,
+          "end": 34,
+          "text": "Z. J. D’Arcy"
+        },
+        {
+          "document": "unicode-initials-and-markers",
+          "kind": "Person",
+          "start": 74,
+          "end": 79,
+          "text": "N. Hà"
+        }
+      ],
+      "median_corpus_ms": 1.0633000001689652,
+      "runs": 30
+    },
+    "optional_nlp": {
+      "status": "unavailable",
+      "model": "en_core_web_sm"
+    }
+  },
+  "redaction_integrity": {
+    "successful_releases": [
+      {
+        "fixture": "txt",
+        "approved_removed": true,
+        "explicit_keep": true,
+        "confirmed_removed": true,
+        "rejected_preserved": true,
+        "detached_preserved": true,
+        "repeats_removed": true,
+        "txt_verified": true,
+        "pdf_verified": true
+      },
+      {
+        "fixture": "pdf",
+        "approved_removed": true,
+        "explicit_keep": true,
+        "confirmed_removed": true,
+        "rejected_preserved": true,
+        "detached_preserved": true,
+        "repeats_removed": true,
+        "txt_verified": true,
+        "pdf_verified": true
+      }
+    ],
+    "negative_cases": [
+      {
+        "fixture": "overlap_conflict",
+        "preview_status": 422,
+        "release_status": 409,
+        "passed": true
+      },
+      {
+        "fixture": "normalized_residual",
+        "preview_status": 422,
+        "release_status": 409,
+        "passed": true
+      },
+      {
+        "fixture": "unresolved_link",
+        "preview_status": 422,
+        "release_status": 409,
+        "passed": true
+      },
+      {
+        "fixture": "contaminated_pdf",
+        "preview_status": 200,
+        "release_status": 422,
+        "passed": true
+      },
+      {
+        "fixture": "contaminated_txt",
+        "preview_status": 200,
+        "release_status": 422,
+        "passed": true
+      }
+    ]
+  },
+  "summary_privacy": [
+    {
+      "fixture": "safe_control",
+      "expected_withholding": false,
+      "trials": 5,
+      "withheld_count": 0,
+      "generation_ms_median": 0.20730000005642069,
+      "attempts_reached_gate": 5,
+      "final_summaries": [
+        "The review team completed the audit and approved the public report."
+      ]
+    },
+    {
+      "fixture": "direct_identifier",
+      "expected_withholding": true,
+      "trials": 5,
+      "withheld_count": 5,
+      "generation_ms_median": 0.18330000011701486,
+      "attempts_reached_gate": 5,
+      "final_summaries": [
+        ""
+      ]
+    },
+    {
+      "fixture": "obfuscated_identifier",
+      "expected_withholding": true,
+      "trials": 5,
+      "withheld_count": 5,
+      "generation_ms_median": 0.20629999971788493,
+      "attempts_reached_gate": 5,
+      "final_summaries": [
+        ""
+      ]
+    },
+    {
+      "fixture": "known_pii_injected",
+      "expected_withholding": true,
+      "trials": 5,
+      "withheld_count": 5,
+      "generation_ms_median": 0.21610000021610176,
+      "attempts_reached_gate": 5,
+      "final_summaries": [
+        ""
+      ]
+    },
+    {
+      "fixture": "quasi_combination",
+      "expected_withholding": true,
+      "trials": 5,
+      "withheld_count": 5,
+      "generation_ms_median": 0.240999999732594,
+      "attempts_reached_gate": 5,
+      "final_summaries": [
+        ""
+      ]
+    }
+  ],
+  "performance": {
+    "environment": {
+      "os": "Windows-11-10.0.26300-SP0",
+      "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+      "logical_cpus": 16,
+      "python": "3.13.2",
+      "pymupdf": "1.28.2",
+      "fastapi": "0.165.0"
+    },
+    "runs_per_size": 5,
+    "warmup_per_size": 1,
+    "cases": [
+      {
+        "pages": 1,
+        "upload_bytes": 1031,
+        "characters": 1514,
+        "candidates": 3,
+        "pdf_bytes": 931,
+        "median_ms": {
+          "extract_pdf": 9.44,
+          "detect_pii": 0.53,
+          "resolve_identity": 4.09,
+          "preview": 0.3,
+          "export_txt": 0.27,
+          "export_pdf": 5.4,
+          "summary": 0.65
+        },
+        "max_ms": {
+          "extract_pdf": 10.68,
+          "detect_pii": 0.72,
+          "resolve_identity": 4.91,
+          "preview": 0.34,
+          "export_txt": 0.28,
+          "export_pdf": 5.75,
+          "summary": 0.66
+        },
+        "peak_process_rss_mib": 70.90234375
+      },
+      {
+        "pages": 10,
+        "upload_bytes": 6151,
+        "characters": 15158,
+        "candidates": 30,
+        "pdf_bytes": 3692,
+        "median_ms": {
+          "extract_pdf": 80.39,
+          "detect_pii": 5.09,
+          "resolve_identity": 43.12,
+          "preview": 2.6,
+          "export_txt": 2.43,
+          "export_pdf": 17.95,
+          "summary": 3.99
+        },
+        "max_ms": {
+          "extract_pdf": 86.02,
+          "detect_pii": 5.24,
+          "resolve_identity": 44.3,
+          "preview": 2.65,
+          "export_txt": 2.46,
+          "export_pdf": 18.54,
+          "summary": 4.75
+        },
+        "peak_process_rss_mib": 71.91796875
+      },
+      {
+        "pages": 50,
+        "upload_bytes": 29054,
+        "characters": 75798,
+        "candidates": 150,
+        "pdf_bytes": 16208,
+        "median_ms": {
+          "extract_pdf": 401.46,
+          "detect_pii": 25.71,
+          "resolve_identity": 214.13,
+          "preview": 14.79,
+          "export_txt": 14.34,
+          "export_pdf": 75.62,
+          "summary": 21.04
+        },
+        "max_ms": {
+          "extract_pdf": 409.09,
+          "detect_pii": 29.67,
+          "resolve_identity": 242.82,
+          "preview": 16.03,
+          "export_txt": 18.79,
+          "export_pdf": 79.95,
+          "summary": 22.52
+        },
+        "peak_process_rss_mib": 75.4296875
+      }
+    ]
+  }
+}

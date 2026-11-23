@@ -1,0 +1,19 @@
+Fictional equipment handoff brief
+
+Name: Tessa Vale
+T. Vale filed the checklist.
+Tessa reviewed the inventory.
+Name: Rina Vale
+Vale signed the routing sheet.
+Name: Rina Vale
+
+Email: records@example.org
+Copy: records@example.org
+Phone: (202) 555-0148
+Employee ID: DEMO-E1042
+Address: 17 Tallowbrook Lane
+Public handoff desk: public-desk@example.org
+Internal reference: ZX-491
+
+The review team checked every item and approved the equipment handoff for the public event.
+The team filed the final checklist and shared the confirmed schedule with all volunteers.

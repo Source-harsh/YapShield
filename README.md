@@ -2,6 +2,8 @@
 
 PrivyDoc is a local document review and redaction application for UTF-8 TXT and text-based PDF. It groups candidate mentions for human review, generates an extractive summary from sanitized text, and checks the release artifacts for approved values.
 
+Built for Thilli AI Hackathon, Problem Statement 3. For the submission walkthrough, see the [demo guide](docs/DEMO_GUIDE.md). For technical evidence, see the [architecture](docs/ARCHITECTURE.md), [data flow](docs/DATA_FLOW.md), [security boundaries](docs/SECURITY.md), and [evaluation summary](docs/EVALUATION.md).
+
 ## Architecture
 
 The React and TypeScript interface is built with Vite, styled with CSS and Tailwind, and uses Framer Motion for transitions. A Python FastAPI service runs on loopback under Uvicorn and serves the production frontend. PyMuPDF extracts PDF text and writes and verifies reflowed PDFs. The detector combines local rules with optional spaCy named-entity recognition.
@@ -65,6 +67,7 @@ Confirm the proposed name links, approve each name and email mention, and add `Z
 | Employee, account, and student IDs | Supported field labels followed by `:`, `=`, or `#`, then a 2–32 character identifier containing at least one digit. The rules exclude common dashed date shapes and dotted versions. |
 | Government ID | Hyphenated US SSNs after an `SSN` or `Social Security Number` label. Component checks catch invalid shapes. Unlabeled SSNs require manual review. |
 | Person | Capitalized multiword names after person labels or titles, plus multiword `PERSON` spans from the optional model. The identity resolver proposes links for eligible short names and initials. Repeated full names and shared short forms can require separate decisions. |
+| Location | Optional model predictions labeled `GPE`, `LOC`, or `FAC` that start the value of an explicit personal field such as `Home city:`, `Birthplace:`, or `Current residence:`. These appear as Location review candidates. |
 
 Offsets are zero-based Unicode code points with an exclusive end, relative to the normalized `text` in the review response. `line` is the one-based start line in that text, including for PDFs. Exact matches with the same entity type share one candidate and retain all distinct detector evidence. Conflicting types and partially overlapping spans remain reviewable. Person aliases inside structured values are suppressed to avoid spurious duplicate candidates.
 
@@ -95,14 +98,32 @@ node --test frontend/tests/review.browser.mjs
 git diff --check
 ```
 
-Rules run locally on the CPU without model packages. To enable the optional model in an environment with compatible Python packages, install spaCy and its English model into the same virtual environment, then restart PrivyDoc:
+## Optional local named-entity recognition
+
+Named-entity recognition (NER) identifies likely names and places in text. PrivyDoc uses the small English spaCy model `en_core_web_sm` with its `tok2vec` and `ner` components. NER adds review candidates alongside deterministic rules. Matching entity types and spans retain evidence from both sources. A place mentioned in ordinary text does not become a Location candidate. Postal addresses and phone numbers continue to use deterministic rules. The English model can miss names and locations or produce incorrect labels and boundaries.
+
+Inference runs locally on the CPU. The core requirements omit spaCy. To reproduce the tested Windows x64 configuration with CPython 3.13, install the optional wheels in the project virtual environment and restart PrivyDoc:
 
 ```powershell
-.venv\Scripts\python.exe -m pip install spacy
-.venv\Scripts\python.exe -m spacy download en_core_web_sm
+.venv\Scripts\python.exe -m pip install --only-binary=:all: spacy==3.8.18 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
+.venv\Scripts\python.exe -m pip check
 ```
 
-The model is loaded once per process on demand. Missing packages or a model loading error leave rules available. Inference runs locally. The optional model integration test runs automatically when both packages are available.
+The model loads on demand once per process. Missing packages or a model loading error leave rules available. Set `$env:PRIVYDOC_RULES_ONLY = "1"` before starting the backend to force rules-only mode. Clear the variable and restart to enable the installed model. The browser regression uses rules-only mode for stable fixture expectations. The backend suite runs real-model integration tests when both packages are installed.
+
+On the unchanged 11-document corpus, the model recovered one otherwise missed person name and produced no additional false positives. This corpus has no labeled personal-location fields. Location behavior is covered by separate integration tests. The address and phone scores stayed the same, including the Indian-format misses.
+
+| Mode | TP / FP / FN | Precision | Recall | F1 | Median corpus pass | Model check and load | Peak process RSS |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Rules only | 44 / 2 / 6 | 95.65% | 88.00% | 91.67% | 4.09 ms | <0.01 ms | 67.13 MiB |
+| Rules plus spaCy | 45 / 2 / 5 | 95.74% | 90.00% | 92.78% | 95.85 ms | 1,787.05 ms | 158.48 MiB |
+
+Measurements use 30 passes per mode in separate processes on Windows 11 with a Ryzen 7 7735HS. The model load time includes importing spaCy. Process RSS includes the interpreter and evaluator imports. The timing includes detection and identity resolution.
+
+```powershell
+.venv\Scripts\python.exe -B -m evaluation.measure_detection --rules-only --peak-memory
+.venv\Scripts\python.exe -B -m evaluation.measure_detection --peak-memory
+```
 
 ## Detection evaluation
 
@@ -132,6 +153,14 @@ Windows 11 build 26300, Ryzen 7 7735HS with 16 logical CPUs and approximately 15
 | 50 | 395.57 ms | 25.50 ms | 212.55 ms | 14.65 ms | 13.97 ms | 74.29 ms | 20.73 ms | 75.57 MiB |
 
 These measurements cover one active document at a time. Dense or compressed PDFs can consume native memory during parsing before the extracted-text limit is checked. Manual matching stops after 200,000 matches per request, including overlaps. For a manual fidelity check, preview a synthetic document with mixed orientations, two columns, and repeated headers. Check each page's reading order in the review, verify the downloaded text against the preview, and check that an unsupported character leaves verified TXT available.
+
+## Phase 8 evidence
+
+Run the full synthetic evaluation with the command below after installing the development requirements. Use a new output filename for each run. The [Phase 8 report](evaluation/PHASE8_REPORT.md) describes the datasets, integrity probes, summary tests, ablation, and Phase 6 comparison. The [recorded JSON](evaluation/phase8_results.json) contains the measured results.
+
+```powershell
+.venv/Scripts/python.exe -B -m evaluation.run_phase8 --output evaluation/phase8_reproduction.json
+```
 
 ## Manual acceptance tests
 

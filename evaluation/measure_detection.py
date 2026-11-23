@@ -46,6 +46,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=30, help="Number of timed corpus passes")
     parser.add_argument("--rules-only", action="store_true", help="Skip the optional spaCy model")
+    parser.add_argument("--peak-memory", action="store_true", help="Report peak process RSS in MiB")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be positive")
@@ -72,7 +73,7 @@ def main():
         return [{"document": doc, "kind": kind, "start": start, "end": end, "text": texts[doc][start:end]}
                 for doc, kind, start, end in sorted(spans)]
 
-    print(json.dumps({
+    results = {
         "model": detection.MODEL if model is not None else None,
         "documents": len(texts),
         "characters": sum(map(len, texts.values())),
@@ -85,7 +86,12 @@ def main():
         },
         "false_positives": describe(predicted - expected),
         "false_negatives": describe(expected - predicted),
-    }, indent=2, ensure_ascii=True))
+    }
+    if args.peak_memory:
+        from evaluation.benchmark_release import peak_rss_mib
+
+        results["peak_process_rss_mib"] = peak_rss_mib()
+    print(json.dumps(results, indent=2, ensure_ascii=True))
 
 
 if __name__ == "__main__":

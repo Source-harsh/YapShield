@@ -1,0 +1,17 @@
+[
+  {
+    "id": "repeated-contact-details",
+    "text": "Name: Kavya Menon\nK. Menon filed the form.\nEmail: record@example.org\nCopy: record@example.org\nMobile: +91 98765 43210\nAlternate: +91 98765 43210\nStudent ID: INDIA_24CS017\nAccount ID: SYN-4810",
+    "entities": [["Person", "Kavya Menon"], ["Person", "K. Menon"], ["Email", "Email: record@example.org", "record@example.org"], ["Email", "Copy: record@example.org", "record@example.org"], ["Phone", "Mobile: +91 98765 43210", "+91 98765 43210"], ["Phone", "Alternate: +91 98765 43210", "+91 98765 43210"], ["Student ID", "INDIA_24CS017"], ["Account ID", "SYN-4810"]]
+  },
+  {
+    "id": "government-identifier-shapes",
+    "text": "SSN: 123-45-6789\nNational ID: 0000 0000 0000\nThe release date is 2025-08-17. Product code: STUDENT-4711.",
+    "entities": [["US SSN", "123-45-6789"], ["Government ID", "0000 0000 0000"]]
+  },
+  {
+    "id": "similar-unicode-names",
+    "text": "Name: Zoë García\nName: Zara García\nZ. García signed.\nContact: shared [at] example [dot] net",
+    "entities": [["Person", "Zoë García"], ["Person", "Zara García"], ["Ambiguous name", "Z. García"], ["Email", "shared [at] example [dot] net"]]
+  }
+]
