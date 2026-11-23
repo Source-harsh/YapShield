@@ -92,9 +92,10 @@ class LinkDecision(BaseModel):
 
 
 class ReleaseRequest(BaseModel):
-    decisions: Annotated[dict[int, Decision], Field(max_length=MAX_CANDIDATES)]
+    decisions: Annotated[dict[int, Decision], Field(max_length=MAX_CANDIDATES)] = Field(default_factory=dict)
     manual: Annotated[list[Annotated[str, Field(min_length=2, max_length=500)]], Field(max_length=50)]
     links: Annotated[dict[str, LinkDecision], Field(max_length=MAX_CANDIDATES)] | None = None
+    mention_decisions: Annotated[dict[str, Decision], Field(max_length=MAX_CANDIDATES)] | None = None
 
 
 class DetectionEvidence(BaseModel):
@@ -223,6 +224,18 @@ def selected_mentions(review: Review, selection: ReleaseRequest) -> tuple[set[tu
     kept: set[Mention] = set()
     links = selection.links
     expected = {mention_id(link.mention) for cluster in review.clusters.values() for link in cluster.alternates}
+    if "mention_decisions" in selection.model_fields_set:
+        mentions = {mention_id(item): item for group in review.groups for item in group}
+        decisions = selection.mention_decisions
+        if decisions is None or decisions.keys() != mentions.keys() or selection.decisions:
+            raise HTTPException(422, "Provide a separate redaction decision for every mention.")
+        if links is None or links.keys() != expected or any(link.decision is not None for link in links.values()):
+            raise HTTPException(422, "Resolve each proposed identity link separately from its redaction decision.")
+        return ({(item.start, item.end) for key, item in mentions.items() if decisions[key] == "redact"},
+                {item for key, item in mentions.items() if decisions[key] == "keep"})
+
+    if selection.decisions.keys() != set(range(len(review.groups))):
+        raise HTTPException(422, "Decide whether to redact or keep every candidate before release.")
     if links is None and "links" in selection.model_fields_set:
         raise HTTPException(422, "Provide link decisions as an object.")
     if links is not None and links.keys() != expected:
@@ -241,7 +254,7 @@ def selected_mentions(review: Review, selection: ReleaseRequest) -> tuple[set[tu
                     decision = link.decision
             if decision == "redact":
                 ranges.add((item.start, item.end))
-            elif links is not None and cluster is not None:
+            else:
                 kept.add(item)
     return ranges, kept
 
@@ -262,19 +275,19 @@ async def discard_review(token: ReviewToken) -> Response:
     return Response(status_code=204)
 
 
-@app.post("/api/release")
-async def release(request: Request, token: ReviewToken) -> JSONResponse:
+async def read_selection(request: Request, token: str) -> tuple[Review, ReleaseRequest]:
     body = await bounded_body(request, 160 * 1024)
     expire_reviews()
     review = reviews.get(token)
     if review is None:
         raise HTTPException(404, "This review expired or was closed. Upload a fresh copy.")
     try:
-        selection = ReleaseRequest.model_validate_json(body)
+        return review, ReleaseRequest.model_validate_json(body)
     except ValueError:
         raise HTTPException(422, "The release decisions could not be read.") from None
-    if selection.decisions.keys() != set(range(len(review.groups))):
-        raise HTTPException(422, "Decide whether to redact or keep every candidate before release.")
+
+
+def prepare_redactions(review: Review, selection: ReleaseRequest) -> tuple[str, set[str], dict[str, int]]:
     ranges, kept = selected_mentions(review, selection)
     for value in selection.manual:
         if not value.strip():
@@ -289,7 +302,7 @@ async def release(request: Request, token: ReviewToken) -> JSONResponse:
         for start, end in ranges:
             next_retained = bisect_right(retained_ends, start)
             if next_retained < len(retained) and retained[next_retained][0] < end:
-                raise HTTPException(422, "An approved redaction overlaps a person mention marked Keep. Review the decisions.")
+                raise HTTPException(422, "An approved redaction overlaps a mention marked Keep. Review the decisions.")
     sanitized, removed = redact(review.text, ranges)
     allowed = {}
     try:
@@ -300,6 +313,23 @@ async def release(request: Request, token: ReviewToken) -> JSONResponse:
             values = [canonical(review.text[start:end]) for start, end in retained]
             allowed = {needle: sum(count_value(value, needle) for value in values) for needle in map(canonical, removed)}
         validate(sanitized, removed, allowed=allowed)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return sanitized, removed, allowed
+
+
+@app.post("/api/preview")
+async def preview(request: Request, token: ReviewToken) -> dict[str, str]:
+    review, selection = await read_selection(request, token)
+    sanitized, _, _ = prepare_redactions(review, selection)
+    return {"text": sanitized}
+
+
+@app.post("/api/release")
+async def release(request: Request, token: ReviewToken) -> JSONResponse:
+    review, selection = await read_selection(request, token)
+    sanitized, removed, allowed = prepare_redactions(review, selection)
+    try:
         summary = summarize(sanitized)
         try:
             validate(summary, removed)

@@ -126,10 +126,16 @@ def test_api_fusion_and_overlapping_release(monkeypatch):
         assert len({item["id"] for item in items}) == len(items)
         assert all(text[item["start"]:item["end"]] == item["text"] for item in items)
 
-        response = client.post("/api/release", headers={"X-Review-Token": review["token"]}, json={
+        headers = {"X-Review-Token": review["token"]}
+        payload = {
             "decisions": {group["id"]: "keep" if kind == "Phone" else "redact" for kind, group in groups.items()},
             "manual": ["ZX99"],
-        })
+        }
+        response = client.post("/api/release", headers=headers, json=payload)
+        assert response.status_code == 422
+        assert "overlaps a mention marked Keep" in response.json()["detail"]
+        payload["decisions"][groups["Phone"]["id"]] = "redact"
+        response = client.post("/api/release", headers=headers, json=payload)
         assert response.status_code == 200
         assert response.json()["text"].count("[REDACTED]") == 3
         assert "202-555-0182" not in response.json()["text"]

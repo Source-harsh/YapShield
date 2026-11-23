@@ -1,50 +1,11 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { ReviewWorkspace } from "./ReviewWorkspace";
+import { applyPending, candidatesFor, type Decision, type Decisions, type Links, type LinkStatus, type Review } from "./review";
 import "./style.css";
 
-type Decision = "redact" | "keep";
-type Mention = {
-  id: string;
-  text: string;
-  kind: string;
-  start: number;
-  end: number;
-  source: string;
-  line: number;
-  evidence: { source: string; rule: string }[];
-};
-type LinkStatus = "confirm" | "reject" | "detach";
-type LinkDecision = { status: LinkStatus; decision?: Decision };
-type IdentityLink = {
-  mention_id: string;
-  relationship: string;
-  evidence: string;
-  uncertainty: "proposed";
-  status: "pending";
-};
-type Identity = {
-  id: string;
-  primary_mention_id: string;
-  mention_ids: string[];
-  alternates: IdentityLink[];
-  relationship: string;
-  possible_primary_ids: string[];
-  possible_primary_count: number;
-  evidence: string;
-  uncertainty: "unlinked" | "proposed" | "uncertain";
-  status: "pending" | "separate";
-};
-type Group = { id: number; kind: string; mentions: Mention[]; identity?: Identity | null };
-type Review = { token: string; text: string; groups: Group[] };
 type Release = { text: string; summary: string; pdf: string | null; pdf_error: string | null };
-
-const linkLabels: Record<LinkStatus, string> = { confirm: "Confirm link", reject: "Reject link", detach: "Detach mention" };
-const linkStatuses: LinkStatus[] = ["confirm", "reject", "detach"];
-
-function linkResolved(link: LinkDecision | undefined) {
-  return !!link && (link.status === "confirm" || !!link.decision);
-}
 
 async function request<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(path, { ...options, cache: "no-store" });
@@ -88,20 +49,24 @@ function DocumentSculpture() {
 function App() {
   const [review, setReview] = useState<Review>();
   const [release, setRelease] = useState<Release>();
-  const [decisions, setDecisions] = useState<Record<number, Decision>>({});
-  const [links, setLinks] = useState<Record<string, LinkDecision>>({});
+  const [decisions, setDecisions] = useState<Decisions>({});
+  const [links, setLinks] = useState<Links>({});
+  const [preview, setPreview] = useState<string>();
   const [manual, setManual] = useState<string[]>([]);
   const [literal, setLiteral] = useState("");
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const original = useRef<HTMLPreElement>(null);
-  const codePoints = useMemo(() => Array.from(review?.text ?? ""), [review?.text]);
-  const mentions = useMemo(() => new Map(review?.groups.flatMap((group) =>
-    group.mentions.map((mention) => [mention.id, mention] as const))), [review]);
+  const previewPanel = useRef<HTMLElement>(null);
+  const candidates = useMemo(() => review ? candidatesFor(review) : [], [review]);
   const reduceMotion = useReducedMotion();
-  const remaining = (review?.groups.length ?? 0) - Object.keys(decisions).length;
+  const ready = candidates.every(({ id, proposal }) => decisions[id] && (!proposal || links[id])) && !literal.trim();
   const active = release ? "Export" : review ? "Review" : "Import";
+
+  useEffect(() => {
+    if (preview !== undefined) previewPanel.current?.focus();
+  }, [preview]);
 
   async function upload(file: File) {
     setError("");
@@ -141,6 +106,7 @@ function App() {
       setFileName("");
       setDecisions({});
       setLinks({});
+      setPreview(undefined);
       setManual([]);
       setLiteral("");
     } catch (failure) {
@@ -150,20 +116,42 @@ function App() {
     }
   }
 
+  function redactionRequest(review: Review): RequestInit {
+    return {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Review-Token": review.token },
+      body: JSON.stringify({ mention_decisions: decisions, manual, links: Object.fromEntries(
+        Object.entries(links).map(([id, status]) => [id, { status }]),
+      ) }),
+    };
+  }
+
+  async function previewRedactions() {
+    if (!review || !ready) return;
+    setBusy(true);
+    setError("");
+    setPreview(undefined);
+    try {
+      const result = await request<{ text: string }>("/api/preview", redactionRequest(review));
+      setPreview(result.text);
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function finalize() {
-    if (!review) return;
+    if (!review || !ready || preview === undefined) return;
     setBusy(true);
     setError("");
     try {
-      const result = await request<Release>("/api/release", {
-        method: "POST", headers: { "Content-Type": "application/json", "X-Review-Token": review.token },
-        body: JSON.stringify({ decisions, manual, links }),
-      });
+      const result = await request<Release>("/api/release", redactionRequest(review));
       setRelease(result);
       setReview(undefined);
       setFileName("");
       setDecisions({});
       setLinks({});
+      setPreview(undefined);
       setManual([]);
       setLiteral("");
     } catch (failure) {
@@ -178,15 +166,17 @@ function App() {
     if (!literal.trim() || manual.includes(literal)) return;
     setManual([...manual, literal]);
     setLiteral("");
+    setPreview(undefined);
   }
 
-  function setLink(groupId: number, mentionId: string, link: LinkDecision) {
-    setLinks((current) => ({ ...current, [mentionId]: link }));
-    setDecisions((current) => {
-      const next = { ...current };
-      delete next[groupId];
-      return next;
-    });
+  function decide(ids: string[], decision: Decision, pendingOnly = false) {
+    setDecisions((current) => pendingOnly ? applyPending(current, ids, decision) : { ...current, [ids[0]]: decision });
+    setPreview(undefined);
+  }
+
+  function setLink(id: string, status: LinkStatus) {
+    setLinks((current) => ({ ...current, [id]: status }));
+    setPreview(undefined);
   }
 
   return (
@@ -231,74 +221,13 @@ function App() {
               <div className="heading"><div><h1>Review candidates</h1><p className="filename">{fileName}</p></div>
                 <button className="secondary" disabled={busy} onClick={() => void reset()}>Close review</button>
               </div>
-              <div className="workspace">
-                <article className="panel">
-                  <h2>Extracted source</h2>
-                  <pre ref={original} tabIndex={0}>{review.text}</pre>
-                </article>
-                <article className="panel">
-                  <div className="heading"><h2>Candidate groups</h2><span className="muted">{remaining} pending</span></div>
-                  <div className="candidate-list">
-                    {review.groups.length === 0 && <p className="muted">No candidates found. Inspect the source for missed information.</p>}
-                    {review.groups.map((group) => {
-                      const identity = group.identity;
-                      const ready = identity?.alternates.every((link) => linkResolved(links[link.mention_id])) ?? true;
-                      const confirmed = identity?.alternates.filter((link) => links[link.mention_id]?.status === "confirm").length ?? 0;
-                      return <fieldset className="candidate" key={group.id} disabled={busy}>
-                        <legend>{group.kind} · {group.mentions.length} {group.mentions.length === 1 ? "mention" : "mentions"}</legend>
-                        {identity?.uncertainty === "uncertain" && <p className="muted">Separate mention. {identity.evidence}.</p>}
-                        <details open={identity?.alternates.length ? true : undefined}>
-                          <summary>{group.mentions[0].text} · Preview occurrences</summary>
-                          {identity?.uncertainty === "uncertain" && <ul>
-                            {identity.possible_primary_ids.map((id) => {
-                              const other = mentions.get(id);
-                              return other && <li key={id}>Possible match {other.text} · Line {other.line}</li>;
-                            })}
-                            {identity.possible_primary_count > identity.possible_primary_ids.length &&
-                              <li>{identity.possible_primary_count - identity.possible_primary_ids.length} more possible matches</li>}
-                          </ul>}
-                          <ul>{group.mentions.map((mention) => {
-                            const proposal = identity?.alternates.find((link) => link.mention_id === mention.id);
-                            const choice = links[mention.id];
-                            return <li key={mention.id} className="identity-mention">
-                              {mention.text} <span className="muted">· Line {mention.line} · {mention.evidence.map(({ source, rule }) => `${source} (${rule})`).join(" · ") || mention.source}</span>
-                              {identity && <div className="identity-context">
-                                {codePoints.slice(Math.max(0, mention.start - 35), mention.start).join("")}
-                                <mark>{mention.text}</mark>
-                                {codePoints.slice(mention.end, mention.end + 35).join("")}
-                              </div>}
-                              {proposal && <>
-                                <p className="muted">{proposal.evidence}.</p>
-                                <div className="controls" aria-label={`Link decision for ${mention.text} on line ${mention.line}`} role="group">
-                                  {linkStatuses.map((status) => <button key={status} aria-pressed={choice?.status === status}
-                                    onClick={() => setLink(group.id, mention.id, { status })}>{linkLabels[status]}</button>)}
-                                </div>
-                                {choice && choice.status !== "confirm" && <div className="controls" aria-label="Separate mention decision" role="group">
-                                  {(["redact", "keep"] as const).map((decision) => <button key={decision} aria-pressed={choice.decision === decision}
-                                    onClick={() => setLink(group.id, mention.id, { ...choice, decision })}>
-                                    {decision === "redact" ? "Redact mention" : "Keep mention"}
-                                  </button>)}
-                                </div>}
-                              </>}
-                            </li>;
-                          })}</ul>
-                        </details>
-                        <div className="controls">
-                          {(["redact", "keep"] as const).map((choice) => (
-                            <button key={choice} disabled={!ready} aria-pressed={decisions[group.id] === choice} onClick={() =>
-                              setDecisions({ ...decisions, [group.id]: choice })}>
-                              {choice === "redact" ? "Redact" : "Keep"} {identity ? confirmed ? "confirmed group" : "mention" : "group"}
-                            </button>
-                          ))}
-                        </div>
-                      </fieldset>;
-                    })}
-                  </div>
+              <ReviewWorkspace text={review.text} candidates={candidates} busy={busy} decisions={decisions} links={links}
+                onDecide={decide} onLink={setLink} sourceRef={original}>
                   <form className="manual" onSubmit={addManual}>
                     <label htmlFor="literal">Manual redactions</label>
                     <p className="muted">Add exact text to remove all case-insensitive matches.</p>
                     <div className="controls">
-                      <textarea id="literal" rows={1} value={literal} onChange={(event) => setLiteral(event.target.value)}
+                      <textarea id="literal" rows={1} value={literal} onChange={(event) => { setLiteral(event.target.value); setPreview(undefined); }}
                         minLength={2} maxLength={500} disabled={busy || manual.length >= 50} />
                       <button disabled={busy || literal.trim().length < 2 || manual.length >= 50}>Add</button>
                       <button type="button" disabled={busy || manual.length >= 50} onClick={() => {
@@ -306,20 +235,25 @@ function App() {
                         if (selection?.anchorNode && selection.focusNode && original.current?.contains(selection.anchorNode)
                           && original.current.contains(selection.focusNode)) {
                           setLiteral(selection.toString().slice(0, 500));
+                          setPreview(undefined);
                         }
                       }}>Use selection</button>
                     </div>
                     {manual.map((item, index) => <div className="manual-item" key={item}><span>{item}</span>
-                      <button type="button" disabled={busy} onClick={() => setManual(manual.filter((_, i) => i !== index))}>Remove</button>
+                      <button type="button" disabled={busy} onClick={() => { setManual(manual.filter((_, i) => i !== index)); setPreview(undefined); }}>Remove</button>
                     </div>)}
                   </form>
-                </article>
-              </div>
+              </ReviewWorkspace>
               <div className="finish">
                 <p className="muted">Review the full source before release. Candidate detection can miss sensitive information.</p>
-                <button className="primary" disabled={busy || remaining > 0 || literal.trim().length > 0}
-                  onClick={() => void finalize()}>{busy ? "Working…" : "Apply redactions"}</button>
+                <button disabled={busy || !ready} onClick={() => void previewRedactions()}>Preview redactions</button>
               </div>
+              {preview !== undefined && <section ref={previewPanel} className="panel" tabIndex={-1} aria-label="Redaction preview">
+                <h2>Redaction preview</h2>
+                <pre tabIndex={0}>{preview}</pre>
+                <div className="exports"><button className="primary" disabled={busy || !ready}
+                  onClick={() => void finalize()}>{busy ? "Working…" : "Apply redactions"}</button></div>
+              </section>}
             </section>
           )}
           {release && (

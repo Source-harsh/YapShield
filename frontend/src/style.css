@@ -132,7 +132,7 @@ p { line-height: 1.55; }
 .sheet-redaction { height: 9%; width: 89%; background: #14232e; }
 .sheet-redaction-short { width: 69%; }
 .heading, .finish { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
-.heading p, .candidate li, .manual-item span { overflow-wrap: anywhere; }
+.heading p, .manual-item span { overflow-wrap: anywhere; }
 .workspace { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-top-color: #537082; padding: clamp(1rem, 2vw, 1.5rem); border-radius: .2rem; }
 .panel .heading { margin-bottom: .75rem; }
@@ -142,15 +142,36 @@ pre {
   white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; font-size: .9rem;
   font-family: var(--mono); background: #0b0e12; border: 1px solid var(--line); border-radius: .15rem;
 }
-.candidate-list { display: grid; gap: .6rem; max-height: 26rem; overflow-y: auto; }
-.candidate { border: 1px solid var(--line); border-radius: .4rem; padding: .65rem; }
-.candidate legend { padding-inline: .3rem; color: var(--muted); font-size: .875rem; }
-.candidate summary { cursor: pointer; overflow-wrap: anywhere; margin-bottom: .5rem; }
-.identity-mention { margin-block: .65rem; overflow-wrap: anywhere; }
-.identity-context { white-space: pre-wrap; margin-block: .25rem; }
+.source-mention { background: #33404a; color: #f4f7fa; border-bottom: 2px solid #a7b9c8; cursor: pointer; }
+.source-mention[data-kind="Person"] { background: #3d3452; border-color: #cebbef; }
+.source-mention[data-kind="Ambiguous name"] { background: #41414d; border-color: #c9cae3; }
+.source-mention[data-kind="Email"] { background: #1f414f; border-color: #9cdaf3; }
+.source-mention[data-kind="Phone"] { background: #244339; border-color: #a5e0c7; }
+.source-mention[data-kind="Address"] { background: #493c27; border-color: #efd298; }
+.source-mention[data-kind="Employee ID"] { background: #303f5c; border-color: #b0c9fa; }
+.source-mention[data-kind="Account ID"] { background: #4c3a2d; border-color: #eab98e; }
+.source-mention[data-kind="Student ID"] { background: #304932; border-color: #b6dda7; }
+.source-mention[data-kind="US SSN"] { background: #482f3b; border-color: #efb6cf; }
+.source-mention[data-overlap="true"] { border-bottom-style: dashed; }
+.source-mention[data-decision="redact"] { text-decoration: line-through; }
+.source-mention[data-decision="keep"] { border-bottom-width: 1px; }
+.source-mention[aria-pressed="true"] { outline: 2px solid #f5d477; outline-offset: 1px; }
+.source-mention:focus-visible { outline-color: var(--ice); }
+.mention-navigation, .shortcut-help { margin-bottom: .7rem; }
+.shortcut-help p { margin-bottom: .35rem; }
+kbd { font-family: var(--mono); }
+.mention-list { display: grid; gap: .35rem; max-height: 15rem; overflow-y: auto; list-style: none; padding: .2rem; }
+.mention-list button { display: grid; width: 100%; text-align: left; gap: .15rem; overflow-wrap: anywhere; }
+.mention-list button[aria-current="true"] { border-color: var(--ice); background: #284354; }
+.mention-detail { border-top: 1px solid var(--line); margin-top: .85rem; padding-top: .85rem; overflow-wrap: anywhere; }
+.mention-detail p { margin-block: .35rem; }
+.identity-context { white-space: pre-wrap; margin-block: .5rem; font-family: var(--mono); font-size: .875rem; }
 .identity-context mark { background: #f5d477; color: #1a202c; }
-.identity-mention .controls { flex-wrap: wrap; margin-block: .4rem; }
-.candidate ul { padding-left: 1.3rem; list-style: disc; margin-bottom: .75rem; }
+.mention-proposal { margin-top: .75rem; }
+.mention-proposal summary { cursor: pointer; }
+.occurrence-list { list-style: none; padding: 0; margin-block: .35rem .65rem; }
+.occurrence-list li { display: grid; justify-items: start; gap: .2rem; margin-block: .35rem; }
+.occurrence-list button { text-align: left; overflow-wrap: anywhere; max-width: 100%; }
 .controls { display: flex; flex-wrap: wrap; gap: .45rem; }
 button {
   border: 1px solid #4b5d70; border-radius: .15rem; padding: .5rem .75rem; font-size: .875rem;

@@ -21,9 +21,9 @@ Run the backend tests with `.venv\Scripts\python.exe -m pytest -q`. The frontend
 ## Review and release
 
 1. Choose a TXT or text-based PDF up to 8 MiB and 100,000 extracted characters. PDFs must be unlocked and have extractable text on every page, with at most 100 pages.
-2. Inspect the extracted source and preview candidate occurrences. For a proposed identity, confirm each link or choose **Reject link** or **Detach mention**, then decide separately whether to keep or redact that mention. Choose **Redact** or **Keep** for each remaining group or standalone mention.
-3. Add manual redactions for missed values. Manual redaction replaces every case-insensitive literal match, including overlaps, and approved spans take precedence wherever they overlap other candidates.
-4. Apply redactions. Download the sanitized TXT, the summary when enough text remains, and the PDF when its saved text passes verification.
+2. Select a highlighted span or a mention in the list. Inspect its context and evidence, then approve it for redaction or keep it. Confirm, reject, or detach each proposed identity link separately from the redaction decision.
+3. Add manual redactions for missed values. Manual redaction matches case-insensitive literal occurrences. An approved span or manual match that overlaps an explicitly kept mention blocks the preview and export until the decisions agree.
+4. Select **Preview redactions** to see the exact sanitized text. Select **Apply redactions**, then download the sanitized TXT, the summary when available, and the PDF when its saved text passes verification. A review change clears the preview.
 
 For a demo, save the following as UTF-8 TXT:
 
@@ -63,8 +63,23 @@ The identity resolver uses the raw Phase 2 detector spans and keeps their eviden
 - A first-name proposal requires a preceding compatible full name within 500 characters and no other compatible anchor. Initials and honorific plus surname may refer to a unique compatible name in either direction within that distance. The interface previews the original wording with surrounding text and explains each proposal.
 - A bare surname, a collision between possible owners, or a repeated exact full name stays separately reviewable. Repeated spellings can describe different people. Common-word name forms are handled conservatively. The resolver does not assign pronouns, fuzzy variants, or nicknames to people. The rules assume given-name-first ordering and a final surname token.
 - The `identity` field on a review group gives the cluster ID, primary and alternate mention IDs, relationship types, evidence, and uncertainty. Proposed links start pending. Decisions stay in the open review UI and are submitted with release. Separate uncertain mentions show up to eight possible matches and the total count.
-- The current UI sends a `links` object to `/api/release`, keyed by proposed mention ID. `confirm` inherits the group decision. `reject` and `detach` require an independent `keep` or `redact` decision. Clients using the Phase 2 payload may omit `links`. Their group decision applies to all mentions listed in that group, and independently listed uncertain matches still require their own group decision.
-- When `links` is provided, release rejects redactions that overlap an explicitly kept person span, including a manual literal match. A spelling can remain in TXT and PDF only at its explicitly kept occurrence when that same spelling was approved for removal elsewhere. Release still checks for unreviewed repeats and withholds a summary that would repeat such a retained spelling.
+- The current UI sends `mention_decisions` and `links` objects keyed by mention ID to `/api/preview` and `/api/release`. Every mention has its own `keep` or `redact` decision, even when its `links` status is `confirm`. Older clients can still submit group decisions. In that mode, confirmed links inherit the group decision and rejected or detached links carry an independent decision. Phase 2 clients may omit `links` and make a decision for every listed group.
+- All request formats protect explicitly kept spans from overlapping redactions. A spelling can remain in TXT and PDF at its explicitly kept occurrence when that same spelling was approved for removal elsewhere. Release checks for unreviewed repeats and withholds a summary that would repeat such a retained spelling.
+
+### Review navigation and checks
+
+Use **Previous candidate** and **Next candidate** or press `K` and `J`. `R` approves the selected mention, `S` keeps it, and `?` opens keyboard help. The help panel includes a shortcut toggle. Shortcuts are inactive while editing a field. Activate an overlapping highlight repeatedly to cycle through its candidates.
+
+Expand **Review exact occurrences** to preview detected values with identical spelling and case. Bulk actions apply only to pending eligible mentions and preserve existing choices. Ambiguous identities and unconfirmed links require individual decisions. Confirmed identity groups have a separate preview and bulk controls.
+
+To run the review tests on Windows, use the existing Python environment, Node.js 24, and Chrome or Chromium. The browser test starts a temporary loopback API and uses the production frontend. Set `PRIVYDOC_CHROME` or `PRIVYDOC_PYTHON` if your executables use different paths.
+
+```powershell
+.venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+npm.cmd --prefix frontend run build
+node --test frontend/tests/review.test.mjs
+node --test frontend/tests/review.browser.mjs
+```
 
 Rules run locally on the CPU without model packages. To enable the optional model in an environment with compatible Python packages, install spaCy and its English model into the same virtual environment, then restart PrivyDoc:
 
