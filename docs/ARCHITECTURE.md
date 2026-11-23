@@ -10,7 +10,8 @@ flowchart TD
     X --> D[Deterministic rules and optional local spaCy NER]
     D --> M[Candidate merging]
     M --> I[Deterministic identity resolution]
-    I --> R[Human review]
+    I --> OQ[Optional local Qwen person suggestions]
+    OQ --> R[Human review]
     R --> P[Redaction preview and receipt]
     P --> E[Verified TXT and PDF export]
     E --> S[Extractive summarization of sanitized text]
@@ -26,8 +27,9 @@ flowchart TD
 | `privydoc/documents.py` | Extraction, span replacement, independent TXT/PDF verification, extractive ranking |
 | `privydoc/detection.py` | Deterministic regex and context rules, optional spaCy NER, same-type exact-span evidence merging |
 | `privydoc/identity.py` | Deterministic document-local identity proposals and separate treatment of ambiguous references |
+| `privydoc/ollama_detection.py` | Optional upload-only Qwen calls on loopback, validation, and source grounding for standalone person suggestions |
 | `privydoc/summary_privacy.py` | Summary provenance, known values, direct identifier patterns, and quasi-identifier checks |
 
-The identity resolver uses compatible name forms, nearby context, and competing anchors to propose links. spaCy supplies NER spans and evidence. A user resolves links and decides whether to redact each mention. Summarization ranks and selects excerpts from verified sanitized text using local code.
+The identity resolver uses compatible name forms, nearby context, and competing anchors to propose links. spaCy supplies NER spans and evidence. Optional Qwen suggestions enter review after baseline linking. They cannot create or change identity links. A user resolves links and decides whether to redact each mention. Summarization ranks and selects excerpts from verified sanitized text using local code.
 
 See [data flow](DATA_FLOW.md), [security assumptions](SECURITY.md), and [evaluation](EVALUATION.md).

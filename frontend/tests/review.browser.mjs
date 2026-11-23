@@ -11,9 +11,10 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const chromium = process.env.PRIVYDOC_CHROME || (process.platform === "win32"
   ? "C:/Program Files/Google/Chrome/Application/chrome.exe" : "chromium");
 const python = process.env.PRIVYDOC_PYTHON || join(root, process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python");
+const liveOllama = process.env.PRIVYDOC_BROWSER_LIVE_OLLAMA === "1";
 
-async function waitFor(check, message) {
-  for (let attempt = 0; attempt < 100; attempt++) {
+async function waitFor(check, message, attempts = 100) {
+  for (let attempt = 0; attempt < attempts; attempt++) {
     const result = await check();
     if (result) return result;
     await delay(50);
@@ -69,14 +70,16 @@ async function connect(url) {
   };
 }
 
-test("production review UI releases TXT and PDF through the complete workflow", { timeout: 60000 }, async (t) => {
+test(liveOllama ? "real Ollama candidate requires browser review before release"
+  : "production review UI releases TXT and PDF through the complete workflow", { timeout: 60000 }, async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), "privydoc-browser-"));
   const profile = join(scratch, "chrome");
   const input = join(scratch, "review.txt");
-  const text = "🙂\nName: Jane Doe\nJ. Doe filed the report.\nEmail: demo@example.org\nCopy: demo@example.org\nCase: DEMO@example.org\nAccount Number: 202-555-0182";
+  const text = liveOllama ? "🙂 Luma Fenwick checked the inventory."
+    : "🙂\nName: Jane Doe\nJ. Doe filed the report.\nEmail: demo@example.org\nCopy: demo@example.org\nCase: DEMO@example.org\nAccount Number: 202-555-0182";
   await writeFile(input, text, "utf8");
   const backend = launch(python, ["-B", "-m", "uvicorn", "privydoc.api:app", "--host", "127.0.0.1", "--port", "0", "--no-access-log"],
-    root, { ...process.env, PRIVYDOC_RULES_ONLY: "1" });
+    root, { ...process.env, PRIVYDOC_RULES_ONLY: liveOllama ? "0" : "1", PRIVYDOC_OLLAMA_ENABLED: liveOllama ? "1" : "0" });
   const browser = launch(chromium, ["--headless", "--disable-background-networking", "--no-first-run", "--remote-debugging-port=0",
     "--window-size=1440,1000", `--user-data-dir=${profile}`, "about:blank"], root);
   let page;
@@ -101,14 +104,18 @@ test("production review UI releases TXT and PDF through the complete workflow", 
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   page = await connect(targets.find(({ type }) => type === "page").webSocketDebuggerUrl);
   const networkUrls = new Set();
+  let reviewResponse;
   page.on("Network.requestWillBeSent", ({ request }) => networkUrls.add(request.url));
+  page.on("Network.responseReceived", ({ response }) => {
+    if (response.url === `${origin}/api/review` && response.status !== 204) reviewResponse = response;
+  });
   await page.send("Network.enable");
   const evaluate = async (expression) => {
     const reply = await page.send("Runtime.evaluate", { expression, returnByValue: true });
     if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
     return reply.result.value;
   };
-  const waitForUi = (expression) => waitFor(() => evaluate(expression), `Timed out waiting for ${expression}`);
+  const waitForUi = (expression) => waitFor(() => evaluate(expression), `Timed out waiting for ${expression}`, liveOllama ? 420 : 100);
   const click = async (selector) => {
     const position = await evaluate(`(() => {
       const element = document.querySelector(${JSON.stringify(selector)});
@@ -141,6 +148,30 @@ test("production review UI releases TXT and PDF through the complete workflow", 
     await page.send("DOM.setFileInputFiles", { nodeId, files: [file] });
   }
   await upload(input);
+  if (liveOllama) {
+    await waitForUi(`document.querySelector('${source}')?.textContent === 'Luma Fenwick'`);
+    assert.equal(reviewResponse.status, 200);
+    assert.equal(Object.entries(reviewResponse.headers).find(([key]) => key.toLowerCase() === "x-privydoc-ollama")?.[1], "completed");
+    await click(source);
+    assert.match(await evaluate("document.querySelector('.mention-detail').textContent"), /Ollama/);
+    assert.equal(await evaluate("document.querySelector('.finish button').disabled"), true);
+    await press("s");
+    await selected("Kept");
+    await click(".finish button");
+    await waitForUi(`!!document.querySelector("${preview}")`);
+    assert.equal(await evaluate(`document.querySelector("${preview} pre").textContent`), text);
+    await click(`${rows}[aria-current=true]`);
+    await press("r");
+    await selected("Approved for redaction");
+    await waitForUi(`!document.querySelector("${preview}")`);
+    await click(".finish button");
+    await waitForUi(`!!document.querySelector("${preview}")`);
+    await click(`${preview} button`);
+    await waitForUi("document.querySelector('.workspace h2')?.textContent === 'Sanitized document'");
+    assert.equal(await evaluate("document.querySelector('.workspace pre').textContent"), "🙂 [REDACTED] checked the inventory.");
+    assert.deepEqual([...networkUrls].filter((url) => /^https?:/.test(url) && new URL(url).origin !== origin), []);
+    return;
+  }
   await waitForUi(`document.querySelectorAll('${rows}').length === 7`);
   assert.equal(await evaluate("document.querySelector('pre').textContent"), text);
   assert.equal(await evaluate(`document.querySelectorAll('${source}')[0].textContent`), "Jane Doe");

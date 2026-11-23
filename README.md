@@ -125,6 +125,24 @@ Measurements use 30 passes per mode in separate processes on Windows 11 with a R
 .venv\Scripts\python.exe -B -m evaluation.measure_detection --peak-memory
 ```
 
+## Optional local SLM suggestions
+
+PrivyDoc can optionally ask an installed Ollama service for additional person-name review candidates during upload. Install Ollama using the [Windows setup guide](https://docs.ollama.com/windows), start it, and run `ollama list`. If the model is missing, install it locally with `ollama pull qwen2.5:0.5b`. PrivyDoc itself never initiates downloads. When optional SLM detection is enabled, the backend uses Ollama at `http://127.0.0.1:11434`. In the PowerShell session that starts the backend:
+
+```powershell
+Remove-Item Env:PRIVYDOC_RULES_ONLY -ErrorAction SilentlyContinue
+$env:PRIVYDOC_OLLAMA_ENABLED = '1'
+.venv/Scripts/python.exe -m uvicorn privydoc.api:app --host 127.0.0.1 --port 8000 --no-access-log
+```
+
+The feature is off by default. Remove `PRIVYDOC_OLLAMA_ENABLED` to disable it, or set `PRIVYDOC_RULES_ONLY=1` to disable both Ollama and spaCy. Baseline detection and identity linking run first. Additional grounded suggestions appear as standalone mentions with Ollama evidence and require explicit human decisions. Ollama runs only during upload-time detection. Preview, release, and the extractive summary use their existing paths.
+
+Only the first three chunks of up to 1,600 characters each are eligible. The adapter allows up to 12 additional candidates within the existing review cap, two concurrent requests per backend process, an 8-second limit per call, an 18-second total limit, and a 16 KiB response cap. Requests contain potentially sensitive excerpts and go only to the fixed local endpoint. The adapter disables proxies and redirects, and never pulls a model. Use a trusted Ollama process and review its logging and local-only settings before processing sensitive documents.
+
+For opted-in uploads, the `X-PrivyDoc-Ollama` response header reports `completed` (possibly zero suggestions), `fallback` (request or validation failure), `busy` (concurrency limit), or `skipped` (no candidate capacity). The adapter ignores exact baseline duplicates. Any other overlap or invalid suggestion rejects the optional batch, preserving baseline candidates. Model suggestions may still be misclassified and require review.
+
+The real model produced a novel candidate for the [fictional browser demo](docs/DEMO_GUIDE.md#optional-live-qwen-demonstration). On the unchanged 11-document synthetic corpus, Qwen added no candidates and increased upload latency. See [Qwen validation](docs/EVALUATION.md#local-qwen-validation) for commands and measurements.
+
 ## Detection evaluation
 
 ```powershell
