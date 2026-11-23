@@ -24,8 +24,14 @@ def upload(client, text):
 
 
 def release(client, review, decisions, manual=()):
-    return client.post("/api/release", headers={"X-Review-Token": review["token"]},
-                       json={"decisions": decisions, "manual": list(manual)})
+    headers = {"X-Review-Token": review["token"]}
+    links = {link["mention_id"]: {"status": "confirm"} for group in review["groups"]
+             for link in (group["identity"] or {}).get("alternates", [])}
+    payload = {"decisions": decisions, "manual": list(manual), "links": links}
+    preview = client.post("/api/preview", headers=headers, json=payload)
+    if preview.status_code != 200:
+        return preview
+    return client.post("/api/release", headers={**headers, "X-Preview-Receipt": preview.json()["receipt"]}, json=payload)
 
 
 def test_text_release_and_summary_only_see_sanitized_text(client, monkeypatch):

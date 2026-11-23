@@ -2,6 +2,8 @@
 
 import asyncio
 import base64
+import hashlib
+import json
 import re
 import secrets
 from bisect import bisect_right
@@ -19,8 +21,11 @@ from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .detection import MAX_CANDIDATES, Mention, detect_mentions
-from .documents import canonical, count_value, export_pdf, extract, redact, summarize, validate
+from .documents import (
+    PdfLayoutError, canonical, count_value, export_pdf, extract, redact, residual_key, summarize, validate, verify_txt,
+)
 from .identity import Cluster, Relationship, mention_id, resolve
+from .summary_privacy import check_summary
 
 MAX_BYTES = 8 * 1024 * 1024
 TTL_SECONDS = 15 * 60
@@ -34,6 +39,7 @@ class Review:
     groups: list[list[Mention]]
     expires: float
     clusters: dict[Mention, Cluster]
+    preview: tuple[str, bytes] | None = None
 
 
 reviews: dict[str, Review] = {}
@@ -238,7 +244,7 @@ def selected_mentions(review: Review, selection: ReleaseRequest) -> tuple[set[tu
         raise HTTPException(422, "Decide whether to redact or keep every candidate before release.")
     if links is None and "links" in selection.model_fields_set:
         raise HTTPException(422, "Provide link decisions as an object.")
-    if links is not None and links.keys() != expected:
+    if (links or {}).keys() != expected:
         raise HTTPException(422, "Resolve every proposed link before release.")
     for index, group in enumerate(review.groups):
         cluster = review.clusters.get(group[0])
@@ -287,7 +293,17 @@ async def read_selection(request: Request, token: str) -> tuple[Review, ReleaseR
         raise HTTPException(422, "The release decisions could not be read.") from None
 
 
-def prepare_redactions(review: Review, selection: ReleaseRequest) -> tuple[str, set[str], dict[str, int]]:
+@dataclass
+class PreparedRelease:
+    text: str
+    removed: set[str]
+    allowed: dict[str, int]
+    required: dict[str, int]
+    summary_input: str
+    summary_blocked: set[str]
+
+
+def prepare_redactions(review: Review, selection: ReleaseRequest) -> PreparedRelease:
     ranges, kept = selected_mentions(review, selection)
     for value in selection.manual:
         if not value.strip():
@@ -303,48 +319,72 @@ def prepare_redactions(review: Review, selection: ReleaseRequest) -> tuple[str, 
             next_retained = bisect_right(retained_ends, start)
             if next_retained < len(retained) and retained[next_retained][0] < end:
                 raise HTTPException(422, "An approved redaction overlaps a mention marked Keep. Review the decisions.")
-    sanitized, removed = redact(review.text, ranges)
     allowed = {}
+    required: dict[str, int] = {}
     try:
+        sanitized, removed = redact(review.text, ranges)
+        masked, summary_blocked = redact(review.text, ranges.union(retained)) if retained else (sanitized, removed)
+        # Overlapping detector types may refer to the same kept occurrence.
+        for start, end in {(item.start, item.end) for item in kept}:
+            value = canonical(review.text[start:end])
+            required[value] = required.get(value, 0) + 1
         if retained and removed:
-            # First prove no residual value exists outside the explicitly kept spans.
-            masked, _ = redact(review.text, ranges.union(retained))
             validate(masked, removed)
-            values = [canonical(review.text[start:end]) for start, end in retained]
-            allowed = {needle: sum(count_value(value, needle) for value in values) for needle in map(canonical, removed)}
-        validate(sanitized, removed, allowed=allowed)
+            values = [residual_key(review.text[start:end]) for start, end in retained]
+            allowed = {needle: sum(count_value(value, needle) for value in values)
+                       for needle in {residual_key(value) for value in removed}}
+        validate(sanitized, removed, allowed=allowed, required=required)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
-    return sanitized, removed, allowed
+    return PreparedRelease(sanitized, removed, allowed, required, masked, summary_blocked)
+
+
+def selection_digest(selection: ReleaseRequest) -> bytes:
+    # Only the digest and the opaque receipt are retained with the review.
+    state = selection.model_dump(exclude_unset=True)
+    return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).digest()
 
 
 @app.post("/api/preview")
 async def preview(request: Request, token: ReviewToken) -> dict[str, str]:
     review, selection = await read_selection(request, token)
-    sanitized, _, _ = prepare_redactions(review, selection)
-    return {"text": sanitized}
+    review.preview = None
+    prepared = prepare_redactions(review, selection)
+    receipt = secrets.token_urlsafe(32)
+    review.preview = receipt, selection_digest(selection)
+    return {"text": prepared.text, "receipt": receipt}
 
 
 @app.post("/api/release")
 async def release(request: Request, token: ReviewToken) -> JSONResponse:
     review, selection = await read_selection(request, token)
-    sanitized, removed, allowed = prepare_redactions(review, selection)
+    receipt = request.headers.get("X-Preview-Receipt")
+    if review.preview is None or review.preview[0] != receipt:
+        raise HTTPException(409, "Preview the current review decisions before release.")
+    if review.preview[1] != selection_digest(selection):
+        review.preview = None
+        raise HTTPException(409, "Preview the current review decisions before release.")
+    prepared = prepare_redactions(review, selection)
+    checks = {"allowed": prepared.allowed, "required": prepared.required}
+    txt = prepared.text.encode("utf-8")
     try:
-        summary = summarize(sanitized)
+        sanitized = verify_txt(txt, prepared.text, prepared.removed, **checks)
+        pdf, pdf_error = None, None
         try:
-            validate(summary, removed)
-        except ValueError:
-            validate(summary, removed, allowed=allowed)
-            summary = ""
-    except ValueError as error:
-        raise HTTPException(422, str(error)) from None
-    pdf, pdf_error = None, None
+            pdf = base64.b64encode(export_pdf(sanitized, prepared.removed, **checks)).decode("ascii")
+        except PdfLayoutError as error:
+            pdf_error = str(error)
+    except (ValueError, RuntimeError) as error:
+        raise HTTPException(422, "The generated files failed release verification.") from error
     try:
-        pdf = base64.b64encode(export_pdf(sanitized, removed, allowed=allowed)).decode("ascii")
-    except ValueError as error:
-        pdf_error = str(error)
+        validate(prepared.summary_input, prepared.summary_blocked)
+        summary = summarize(prepared.summary_input)
+        check_summary(summary, prepared.summary_input, prepared.summary_blocked)
+    except (ValueError, RuntimeError):
+        summary = ""
     reviews.pop(token, None)
-    return JSONResponse({"text": sanitized, "summary": summary, "pdf": pdf, "pdf_error": pdf_error})
+    return JSONResponse({"text": sanitized, "txt": base64.b64encode(txt).decode("ascii"),
+                         "summary": summary, "pdf": pdf, "pdf_error": pdf_error})
 
 
 if DIST.is_dir():

@@ -44,15 +44,15 @@ def test_preview_and_release_share_exact_mention_and_manual_redactions(client, m
     for _ in range(2):
         response = client.post("/api/preview", headers=headers, json=payload)
         assert response.status_code == 200, response.text
-        assert response.json() == {"text": expected}
+        assert response.json()["text"] == expected
         assert response.headers["Cache-Control"] == "no-store"
     assert seen == []
 
-    response = client.post("/api/release", headers=headers, json=payload)
+    response = client.post("/api/release", headers={**headers, "X-Preview-Receipt": response.json()["receipt"]}, json=payload)
     assert response.status_code == 200, response.text
     result = response.json()
     assert result["text"] == expected
-    assert seen == [expected]
+    assert seen == [expected.replace("J. Doe", "[REDACTED]").replace("jane@example.com", "[REDACTED]")]
     with pymupdf.open(stream=base64.b64decode(result["pdf"]), filetype="pdf") as pdf:
         assert pdf[0].get_text().strip() == expected
     assert client.post("/api/preview", headers=headers, json=payload).status_code == 404
@@ -70,12 +70,12 @@ def test_incomplete_or_conflicting_mention_requests_cannot_preview_or_release(cl
         {"links": {alias: {"status": "detach", "decision": "redact"}}},
         {"manual": ["Jane"]},
     ]
-    for endpoint in ("/api/preview", "/api/release"):
-        for changes in variants:
-            assert client.post(endpoint, headers=headers, json={**base, **changes}).status_code == 422
-    assert client.post("/api/preview", headers=headers, json=base).json() == {
-        "text": "Name: Jane Doe\n[REDACTED] filed it.",
-    }
+    preview = client.post("/api/preview", headers=headers, json=base).json()
+    assert preview["text"] == "Name: Jane Doe\n[REDACTED] filed it."
+    for changes in variants:
+        assert client.post("/api/release", headers={**headers, "X-Preview-Receipt": preview["receipt"]},
+                           json={**base, **changes}).status_code == 409
+        assert client.post("/api/preview", headers=headers, json={**base, **changes}).status_code == 422
 
 
 def test_overlapping_and_adjacent_unicode_mentions(client, monkeypatch):
@@ -90,4 +90,4 @@ def test_overlapping_and_adjacent_unicode_mentions(client, monkeypatch):
     payload = {"mention_decisions": {first: "redact", second: "keep", adjacent: "redact"}, "links": {}, "manual": []}
     assert client.post("/api/preview", headers=headers, json=payload).status_code == 422
     payload["mention_decisions"][second] = "redact"
-    assert client.post("/api/preview", headers=headers, json=payload).json() == {"text": "🙂[REDACTED]!"}
+    assert client.post("/api/preview", headers=headers, json=payload).json()["text"] == "🙂[REDACTED]!"

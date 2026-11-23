@@ -102,9 +102,12 @@ def upload(client, text, *, pdf=False):
 
 
 def release(client, review, decisions, links, manual=()):
-    return client.post("/api/release", headers={"X-Review-Token": review["token"]}, json={
-        "decisions": decisions, "links": links, "manual": list(manual),
-    })
+    headers = {"X-Review-Token": review["token"]}
+    payload = {"decisions": decisions, "links": links, "manual": list(manual)}
+    preview = client.post("/api/preview", headers=headers, json=payload)
+    if preview.status_code != 200:
+        return preview
+    return client.post("/api/release", headers={**headers, "X-Preview-Receipt": preview.json()["receipt"]}, json=payload)
 
 
 @pytest.mark.parametrize("pdf", [False, True])
@@ -152,7 +155,7 @@ def test_one_identical_full_name_can_be_kept_without_releasing_a_summary_leak():
         assert response.status_code == 200, response.text
         result = response.json()
         assert result["text"].count("Jane Doe") == 1
-        assert not result["summary"]
+        assert "Jane Doe" not in result["summary"]
         with pymupdf.open(stream=base64.b64decode(result["pdf"]), filetype="pdf") as output:
             assert output[0].get_text().count("Jane Doe") == 1
 

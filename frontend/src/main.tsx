@@ -5,7 +5,12 @@ import { ReviewWorkspace } from "./ReviewWorkspace";
 import { applyPending, candidatesFor, type Decision, type Decisions, type Links, type LinkStatus, type Review } from "./review";
 import "./style.css";
 
-type Release = { text: string; summary: string; pdf: string | null; pdf_error: string | null };
+type Release = { text: string; txt: string; summary: string; pdf: string | null; pdf_error: string | null };
+type Preview = { text: string; receipt: string };
+
+function artifactBytes(encoded: string) {
+  return Uint8Array.from(atob(encoded), (character) => character.charCodeAt(0));
+}
 
 async function request<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(path, { ...options, cache: "no-store" });
@@ -51,7 +56,7 @@ function App() {
   const [release, setRelease] = useState<Release>();
   const [decisions, setDecisions] = useState<Decisions>({});
   const [links, setLinks] = useState<Links>({});
-  const [preview, setPreview] = useState<string>();
+  const [preview, setPreview] = useState<Preview>();
   const [manual, setManual] = useState<string[]>([]);
   const [literal, setLiteral] = useState("");
   const [fileName, setFileName] = useState("");
@@ -116,9 +121,12 @@ function App() {
     }
   }
 
-  function redactionRequest(review: Review): RequestInit {
+  function redactionRequest(review: Review, receipt?: string): RequestInit {
     return {
-      method: "POST", headers: { "Content-Type": "application/json", "X-Review-Token": review.token },
+      method: "POST", headers: {
+        "Content-Type": "application/json", "X-Review-Token": review.token,
+        ...(receipt ? { "X-Preview-Receipt": receipt } : {}),
+      },
       body: JSON.stringify({ mention_decisions: decisions, manual, links: Object.fromEntries(
         Object.entries(links).map(([id, status]) => [id, { status }]),
       ) }),
@@ -131,8 +139,7 @@ function App() {
     setError("");
     setPreview(undefined);
     try {
-      const result = await request<{ text: string }>("/api/preview", redactionRequest(review));
-      setPreview(result.text);
+      setPreview(await request<Preview>("/api/preview", redactionRequest(review)));
     } catch (failure) {
       setError((failure as Error).message);
     } finally {
@@ -145,7 +152,7 @@ function App() {
     setBusy(true);
     setError("");
     try {
-      const result = await request<Release>("/api/release", redactionRequest(review));
+      const result = await request<Release>("/api/release", redactionRequest(review, preview.receipt));
       setRelease(result);
       setReview(undefined);
       setFileName("");
@@ -250,7 +257,7 @@ function App() {
               </div>
               {preview !== undefined && <section ref={previewPanel} className="panel" tabIndex={-1} aria-label="Redaction preview">
                 <h2>Redaction preview</h2>
-                <pre tabIndex={0}>{preview}</pre>
+                <pre tabIndex={0}>{preview.text}</pre>
                 <div className="exports"><button className="primary" disabled={busy || !ready}
                   onClick={() => void finalize()}>{busy ? "Working…" : "Apply redactions"}</button></div>
               </section>}
@@ -264,9 +271,9 @@ function App() {
               <div className="workspace">
                 <article className="panel"><h2>Sanitized document</h2><pre tabIndex={0}>{release.text}</pre>
                   <div className="controls exports">
-                    <button className="primary" onClick={() => download(new Blob([release.text], { type: "text/plain;charset=utf-8" }), "sanitized.txt")}>Download TXT</button>
+                    <button className="primary" onClick={() => download(new Blob([artifactBytes(release.txt)], { type: "text/plain;charset=utf-8" }), "sanitized.txt")}>Download TXT</button>
                     {release.pdf && <button onClick={() => download(new Blob([
-                      Uint8Array.from(atob(release.pdf!), (character) => character.charCodeAt(0)),
+                      artifactBytes(release.pdf!),
                     ], { type: "application/pdf" }), "sanitized.pdf")}>Download PDF</button>}
                   </div>
                   {release.pdf_error && <p className="muted">{release.pdf_error}</p>}
