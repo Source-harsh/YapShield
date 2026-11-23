@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import "./style.css";
 
@@ -14,8 +14,37 @@ type Mention = {
   line: number;
   evidence: { source: string; rule: string }[];
 };
-type Review = { token: string; text: string; groups: { id: number; kind: string; mentions: Mention[] }[] };
+type LinkStatus = "confirm" | "reject" | "detach";
+type LinkDecision = { status: LinkStatus; decision?: Decision };
+type IdentityLink = {
+  mention_id: string;
+  relationship: string;
+  evidence: string;
+  uncertainty: "proposed";
+  status: "pending";
+};
+type Identity = {
+  id: string;
+  primary_mention_id: string;
+  mention_ids: string[];
+  alternates: IdentityLink[];
+  relationship: string;
+  possible_primary_ids: string[];
+  possible_primary_count: number;
+  evidence: string;
+  uncertainty: "unlinked" | "proposed" | "uncertain";
+  status: "pending" | "separate";
+};
+type Group = { id: number; kind: string; mentions: Mention[]; identity?: Identity | null };
+type Review = { token: string; text: string; groups: Group[] };
 type Release = { text: string; summary: string; pdf: string | null; pdf_error: string | null };
+
+const linkLabels: Record<LinkStatus, string> = { confirm: "Confirm link", reject: "Reject link", detach: "Detach mention" };
+const linkStatuses: LinkStatus[] = ["confirm", "reject", "detach"];
+
+function linkResolved(link: LinkDecision | undefined) {
+  return !!link && (link.status === "confirm" || !!link.decision);
+}
 
 async function request<T>(path: string, options: RequestInit): Promise<T> {
   const response = await fetch(path, { ...options, cache: "no-store" });
@@ -60,12 +89,16 @@ function App() {
   const [review, setReview] = useState<Review>();
   const [release, setRelease] = useState<Release>();
   const [decisions, setDecisions] = useState<Record<number, Decision>>({});
+  const [links, setLinks] = useState<Record<string, LinkDecision>>({});
   const [manual, setManual] = useState<string[]>([]);
   const [literal, setLiteral] = useState("");
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const original = useRef<HTMLPreElement>(null);
+  const codePoints = useMemo(() => Array.from(review?.text ?? ""), [review?.text]);
+  const mentions = useMemo(() => new Map(review?.groups.flatMap((group) =>
+    group.mentions.map((mention) => [mention.id, mention] as const))), [review]);
   const reduceMotion = useReducedMotion();
   const remaining = (review?.groups.length ?? 0) - Object.keys(decisions).length;
   const active = release ? "Export" : review ? "Review" : "Import";
@@ -107,6 +140,7 @@ function App() {
       setRelease(undefined);
       setFileName("");
       setDecisions({});
+      setLinks({});
       setManual([]);
       setLiteral("");
     } catch (failure) {
@@ -123,12 +157,13 @@ function App() {
     try {
       const result = await request<Release>("/api/release", {
         method: "POST", headers: { "Content-Type": "application/json", "X-Review-Token": review.token },
-        body: JSON.stringify({ decisions, manual }),
+        body: JSON.stringify({ decisions, manual, links }),
       });
       setRelease(result);
       setReview(undefined);
       setFileName("");
       setDecisions({});
+      setLinks({});
       setManual([]);
       setLiteral("");
     } catch (failure) {
@@ -143,6 +178,15 @@ function App() {
     if (!literal.trim() || manual.includes(literal)) return;
     setManual([...manual, literal]);
     setLiteral("");
+  }
+
+  function setLink(groupId: number, mentionId: string, link: LinkDecision) {
+    setLinks((current) => ({ ...current, [mentionId]: link }));
+    setDecisions((current) => {
+      const next = { ...current };
+      delete next[groupId];
+      return next;
+    });
   }
 
   return (
@@ -196,25 +240,59 @@ function App() {
                   <div className="heading"><h2>Candidate groups</h2><span className="muted">{remaining} pending</span></div>
                   <div className="candidate-list">
                     {review.groups.length === 0 && <p className="muted">No candidates found. Inspect the source for missed information.</p>}
-                    {review.groups.map((group) => (
-                      <fieldset className="candidate" key={group.id} disabled={busy}>
+                    {review.groups.map((group) => {
+                      const identity = group.identity;
+                      const ready = identity?.alternates.every((link) => linkResolved(links[link.mention_id])) ?? true;
+                      const confirmed = identity?.alternates.filter((link) => links[link.mention_id]?.status === "confirm").length ?? 0;
+                      return <fieldset className="candidate" key={group.id} disabled={busy}>
                         <legend>{group.kind} · {group.mentions.length} {group.mentions.length === 1 ? "mention" : "mentions"}</legend>
-                        <details>
-                          <summary>{group.mentions[0].text}</summary>
-                          <ul>{group.mentions.map((mention) => (
-                            <li key={mention.id}>{mention.text} <span className="muted">· Line {mention.line} · {mention.evidence.map(({ source, rule }) => `${source} (${rule})`).join(" · ") || mention.source}</span></li>
-                          ))}</ul>
+                        {identity?.uncertainty === "uncertain" && <p className="muted">Separate mention. {identity.evidence}.</p>}
+                        <details open={identity?.alternates.length ? true : undefined}>
+                          <summary>{group.mentions[0].text} · Preview occurrences</summary>
+                          {identity?.uncertainty === "uncertain" && <ul>
+                            {identity.possible_primary_ids.map((id) => {
+                              const other = mentions.get(id);
+                              return other && <li key={id}>Possible match {other.text} · Line {other.line}</li>;
+                            })}
+                            {identity.possible_primary_count > identity.possible_primary_ids.length &&
+                              <li>{identity.possible_primary_count - identity.possible_primary_ids.length} more possible matches</li>}
+                          </ul>}
+                          <ul>{group.mentions.map((mention) => {
+                            const proposal = identity?.alternates.find((link) => link.mention_id === mention.id);
+                            const choice = links[mention.id];
+                            return <li key={mention.id} className="identity-mention">
+                              {mention.text} <span className="muted">· Line {mention.line} · {mention.evidence.map(({ source, rule }) => `${source} (${rule})`).join(" · ") || mention.source}</span>
+                              {identity && <div className="identity-context">
+                                {codePoints.slice(Math.max(0, mention.start - 35), mention.start).join("")}
+                                <mark>{mention.text}</mark>
+                                {codePoints.slice(mention.end, mention.end + 35).join("")}
+                              </div>}
+                              {proposal && <>
+                                <p className="muted">{proposal.evidence}.</p>
+                                <div className="controls" aria-label={`Link decision for ${mention.text} on line ${mention.line}`} role="group">
+                                  {linkStatuses.map((status) => <button key={status} aria-pressed={choice?.status === status}
+                                    onClick={() => setLink(group.id, mention.id, { status })}>{linkLabels[status]}</button>)}
+                                </div>
+                                {choice && choice.status !== "confirm" && <div className="controls" aria-label="Separate mention decision" role="group">
+                                  {(["redact", "keep"] as const).map((decision) => <button key={decision} aria-pressed={choice.decision === decision}
+                                    onClick={() => setLink(group.id, mention.id, { ...choice, decision })}>
+                                    {decision === "redact" ? "Redact mention" : "Keep mention"}
+                                  </button>)}
+                                </div>}
+                              </>}
+                            </li>;
+                          })}</ul>
                         </details>
                         <div className="controls">
                           {(["redact", "keep"] as const).map((choice) => (
-                            <button key={choice} aria-pressed={decisions[group.id] === choice} onClick={() =>
+                            <button key={choice} disabled={!ready} aria-pressed={decisions[group.id] === choice} onClick={() =>
                               setDecisions({ ...decisions, [group.id]: choice })}>
-                              {choice === "redact" ? "Redact group" : "Keep group"}
+                              {choice === "redact" ? "Redact" : "Keep"} {identity ? confirmed ? "confirmed group" : "mention" : "group"}
                             </button>
                           ))}
                         </div>
-                      </fieldset>
-                    ))}
+                      </fieldset>;
+                    })}
                   </div>
                   <form className="manual" onSubmit={addManual}>
                     <label htmlFor="literal">Manual redactions</label>
@@ -262,7 +340,7 @@ function App() {
                 <article className="panel"><h2>Extractive summary</h2>
                   {release.summary ? <><pre tabIndex={0}>{release.summary}</pre><div className="exports">
                     <button onClick={() => download(new Blob([release.summary], { type: "text/plain;charset=utf-8" }), "summary.txt")}>Download summary</button>
-                  </div></> : <p className="muted">The sanitized text is too short for a summary.</p>}
+                  </div></> : <p className="muted">No summary is available for this release.</p>}
                 </article>
               </div>
             </section>

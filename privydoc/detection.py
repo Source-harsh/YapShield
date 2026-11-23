@@ -122,7 +122,7 @@ def rule_mentions(text: str) -> Iterator[Mention]:
         usable = []
         for word in words:
             value = word.group().rstrip(".")
-            if not value[0].isupper() or (len(value) == 1 and not word.group().endswith(".")):
+            if not value[0].isupper():
                 break
             usable.append(word)
             if len(value) > 1 and word.group().endswith("."):
@@ -146,9 +146,7 @@ def fuse(mentions: list[Mention]) -> list[Mention]:
     return list(spans.values())
 
 
-def detect(text: str, *, use_nlp: bool = True) -> list[list[Mention]]:
-    people: dict[str, list[Mention]] = {}
-    groups: dict[tuple[str, str], list[Mention]] = {}
+def detect_mentions(text: str, *, use_nlp: bool = True) -> list[Mention]:
     mentions = list(rule_mentions(text))
     structured = [item for item in mentions if item.kind != "Person"]
     nlp = local_nlp() if use_nlp else None
@@ -161,6 +159,14 @@ def detect(text: str, *, use_nlp: bool = True) -> list[list[Mention]]:
     mentions = fuse(mentions)
     if len(mentions) > MAX_CANDIDATES:
         raise ValueError("Too many candidates. Review the document in smaller sections.")
+    return mentions
+
+
+def detect(text: str, *, use_nlp: bool = True) -> list[list[Mention]]:
+    """Keep the Phase 2 detector and its evaluation interface available."""
+    people: dict[str, list[Mention]] = {}
+    groups: dict[tuple[str, str], list[Mention]] = {}
+    mentions = detect_mentions(text, use_nlp=use_nlp)
     for mention in mentions:
         key = text[mention.start:mention.end].casefold()
         target = people.setdefault(key, []) if mention.kind == "Person" else groups.setdefault((mention.kind, key), [])

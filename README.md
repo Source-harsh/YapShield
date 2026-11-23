@@ -21,7 +21,7 @@ Run the backend tests with `.venv\Scripts\python.exe -m pytest -q`. The frontend
 ## Review and release
 
 1. Choose a TXT or text-based PDF up to 8 MiB and 100,000 extracted characters. PDFs must be unlocked and have extractable text on every page, with at most 100 pages.
-2. Inspect the extracted source. For every group, choose **Redact group** or **Keep group**. Expand a group to see its mentions, line numbers, and detection method.
+2. Inspect the extracted source and preview candidate occurrences. For a proposed identity, confirm each link or choose **Reject link** or **Detach mention**, then decide separately whether to keep or redact that mention. Choose **Redact** or **Keep** for each remaining group or standalone mention.
 3. Add manual redactions for missed values. Manual redaction replaces every case-insensitive literal match, including overlaps, and approved spans take precedence wherever they overlap other candidates.
 4. Apply redactions. Download the sanitized TXT, the summary when enough text remains, and the PDF when its saved text passes verification.
 
@@ -54,7 +54,17 @@ Approve the name and email groups, and add `ZX99` manually. Inspect the resultin
 | Government ID | Hyphenated US SSNs after an `SSN` or `Social Security Number` label. Component checks catch invalid shapes. Unlabeled SSNs require manual review. |
 | Person | Capitalized multiword names after person labels or titles, plus multiword `PERSON` spans from the optional model. The detector links repeated full names, capitalized short forms, and dotted or undotted first initials with surnames. Shared short forms have their own review group. |
 
-Offsets are zero-based Unicode code points with an exclusive end, relative to the normalized `text` in the review response. `line` is the one-based start line in that text, including for PDFs. Exact matches with the same entity type share one candidate and retain all distinct detector evidence. Conflicting types and partially overlapping spans remain reviewable. The release API continues to give approved spans precedence over overlapping kept spans. Person aliases inside structured values are suppressed to avoid spurious duplicate candidates.
+Offsets are zero-based Unicode code points with an exclusive end, relative to the normalized `text` in the review response. `line` is the one-based start line in that text, including for PDFs. Exact matches with the same entity type share one candidate and retain all distinct detector evidence. Conflicting types and partially overlapping spans remain reviewable. Person aliases inside structured values are suppressed to avoid spurious duplicate candidates.
+
+## Identity review
+
+The identity resolver uses the raw Phase 2 detector spans and keeps their evidence. It compares document-local name tokens after case folding, whitespace tokenization, and normalization of common apostrophes and hyphens. The text and offsets in the review stay tied to the extracted document. The resolver can also surface an unlabeled two-word name if a separate dotted initial and surname corroborate it nearby.
+
+- A first-name proposal requires a preceding compatible full name within 500 characters and no other compatible anchor. Initials and honorific plus surname may refer to a unique compatible name in either direction within that distance. The interface previews the original wording with surrounding text and explains each proposal.
+- A bare surname, a collision between possible owners, or a repeated exact full name stays separately reviewable. Repeated spellings can describe different people. Common-word name forms are handled conservatively. The resolver does not assign pronouns, fuzzy variants, or nicknames to people. The rules assume given-name-first ordering and a final surname token.
+- The `identity` field on a review group gives the cluster ID, primary and alternate mention IDs, relationship types, evidence, and uncertainty. Proposed links start pending. Decisions stay in the open review UI and are submitted with release. Separate uncertain mentions show up to eight possible matches and the total count.
+- The current UI sends a `links` object to `/api/release`, keyed by proposed mention ID. `confirm` inherits the group decision. `reject` and `detach` require an independent `keep` or `redact` decision. Clients using the Phase 2 payload may omit `links`. Their group decision applies to all mentions listed in that group, and independently listed uncertain matches still require their own group decision.
+- When `links` is provided, release rejects redactions that overlap an explicitly kept person span, including a manual literal match. A spelling can remain in TXT and PDF only at its explicitly kept occurrence when that same spelling was approved for removal elsewhere. Release still checks for unreviewed repeats and withholds a summary that would repeat such a retained spelling.
 
 Rules run locally on the CPU without model packages. To enable the optional model in an environment with compatible Python packages, install spaCy and its English model into the same virtual environment, then restart PrivyDoc:
 
@@ -72,6 +82,6 @@ The model is loaded once per process on demand. Missing packages or a model load
 .venv\Scripts\python.exe -B -m evaluation.measure_detection
 ```
 
-The evaluator scores unique `(document, entity type, start, end)` tuples against the labeled synthetic corpus. Partial matches and incorrect types count as both a false positive and a false negative. The report includes micro-averaged and per-entity metrics, mismatch details, and detector-only timings. Model startup is timed separately. The second command reports which model, if any, actually ran.
+The evaluator uses the Phase 2 detection interface and scores unique `(document, entity type, start, end)` tuples against the labeled synthetic corpus. Partial matches and incorrect types count as both a false positive and a false negative. The report includes micro-averaged and per-entity metrics, mismatch details, and detector-only timings. Model startup is timed separately. The second command reports which model, if any, actually ran. Identity linking and reviewer decisions are covered separately by the identity regression tests.
 
 The measured Windows rules-only baseline on seven synthetic documents (1,112 characters) was **29 true positives, 0 false positives, and 2 false negatives**. Precision was **100.00%**, recall **93.55%**, and F1 **96.67%**. The first pass took **3.58 ms**, and the median over 30 corpus passes was **1.65 ms**. The misses were an unlabeled person name in prose and a German `+49` number. These results describe this small corpus. Coverage for unseen documents, memory at the upload limit, and optional model performance require separate measurements.

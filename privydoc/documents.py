@@ -62,11 +62,17 @@ def canonical(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
 
 
-def validate(text: str, removed: set[str]) -> None:
+def count_value(text: str, value: str) -> int:
+    if not value:
+        return 0
+    return sum(1 for _ in re.finditer(r"(?=(?<!\w)" + re.escape(value) + r"(?!\w))", text))
+
+
+def validate(text: str, removed: set[str], *, allowed: dict[str, int] | None = None) -> None:
     reviewed = canonical(text.replace("[REDACTED]", "\x00"))
     for value in removed:
         needle = canonical(value)
-        if needle and re.search(r"(?<!\w)" + re.escape(needle) + r"(?!\w)", reviewed):
+        if count_value(reviewed, needle) > (allowed or {}).get(needle, 0):
             raise ValueError("An approved value still appears in the release. Review repeated mentions.")
 
 
@@ -86,7 +92,7 @@ def summarize(sanitized: str) -> str:
     return "\n\n".join(item[2] for item in selected)
 
 
-def export_pdf(sanitized: str, removed: set[str]) -> bytes:
+def export_pdf(sanitized: str, removed: set[str], *, allowed: dict[str, int] | None = None) -> bytes:
     """Generate a new PDF, then validate the bytes through a fresh parser."""
     font = pymupdf.Font("helv")
     size = 11
@@ -117,5 +123,5 @@ def export_pdf(sanitized: str, removed: set[str]) -> bytes:
         extracted = "\n".join(page.get_text() for page in reopened)
         if " ".join(extracted.split()) != " ".join(sanitized.split()):
             raise ValueError("PDF text did not round-trip exactly. The verified TXT is available.")
-        validate(extracted, removed)
+        validate(extracted, removed, allowed=allowed)
     return payload

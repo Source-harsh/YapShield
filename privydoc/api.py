@@ -18,8 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .detection import MAX_CANDIDATES, Mention, detect
-from .documents import export_pdf, extract, redact, summarize, validate
+from .detection import MAX_CANDIDATES, Mention, detect_mentions
+from .documents import canonical, count_value, export_pdf, extract, redact, summarize, validate
+from .identity import Cluster, Relationship, mention_id, resolve
 
 MAX_BYTES = 8 * 1024 * 1024
 TTL_SECONDS = 15 * 60
@@ -32,6 +33,7 @@ class Review:
     text: str
     groups: list[list[Mention]]
     expires: float
+    clusters: dict[Mention, Cluster]
 
 
 reviews: dict[str, Review] = {}
@@ -81,9 +83,18 @@ async def protect_responses(request: Request, call_next: Callable[[Request], Awa
     return response
 
 
+Decision = Literal["redact", "keep"]
+
+
+class LinkDecision(BaseModel):
+    status: Literal["confirm", "reject", "detach"]
+    decision: Decision | None = None
+
+
 class ReleaseRequest(BaseModel):
-    decisions: Annotated[dict[int, Literal["redact", "keep"]], Field(max_length=MAX_CANDIDATES)]
+    decisions: Annotated[dict[int, Decision], Field(max_length=MAX_CANDIDATES)]
     manual: Annotated[list[Annotated[str, Field(min_length=2, max_length=500)]], Field(max_length=50)]
+    links: Annotated[dict[str, LinkDecision], Field(max_length=MAX_CANDIDATES)] | None = None
 
 
 class DetectionEvidence(BaseModel):
@@ -106,6 +117,28 @@ class ReviewGroup(BaseModel):
     id: int
     kind: str
     mentions: list[ReviewMention]
+    identity: "IdentityCluster | None" = None
+
+
+class IdentityLink(BaseModel):
+    mention_id: str
+    relationship: Relationship
+    evidence: str
+    uncertainty: Literal["proposed"] = "proposed"
+    status: Literal["pending"] = "pending"
+
+
+class IdentityCluster(BaseModel):
+    id: str
+    primary_mention_id: str
+    mention_ids: list[str]
+    alternates: list[IdentityLink]
+    relationship: Relationship
+    possible_primary_ids: list[str]
+    possible_primary_count: int
+    evidence: str
+    uncertainty: Literal["unlinked", "proposed", "uncertain"]
+    status: Literal["pending", "separate"]
 
 
 class ReviewResponse(BaseModel):
@@ -137,11 +170,11 @@ async def create_review(request: Request) -> dict:
         raise HTTPException(429, "Close an existing review or wait for it to expire.")
     try:
         source = extract(data, pdf=content_type == "application/pdf")
-        groups = detect(source)
+        groups, clusters = resolve(source, detect_mentions(source))
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     token = secrets.token_urlsafe(32)
-    reviews[token] = Review(source, groups, monotonic() + TTL_SECONDS)
+    reviews[token] = Review(source, groups, monotonic() + TTL_SECONDS, clusters)
     line_starts = [0, *(match.end() for match in re.finditer("\n", source))]
     return {
         "token": token,
@@ -150,9 +183,10 @@ async def create_review(request: Request) -> dict:
             {
                 "id": index,
                 "kind": group[0].kind,
+                "identity": serialize_cluster(clusters[group[0]]) if group[0] in clusters else None,
                 "mentions": [
                     {
-                        "id": f"{item.start}:{item.end}:{item.kind}",
+                        "id": mention_id(item),
                         "text": source[item.start:item.end],
                         "kind": item.kind,
                         "start": item.start,
@@ -167,6 +201,59 @@ async def create_review(request: Request) -> dict:
             for index, group in enumerate(groups)
         ],
     }
+
+
+def serialize_cluster(cluster: Cluster) -> IdentityCluster:
+    primary = mention_id(cluster.primary)
+    return IdentityCluster(
+        id=f"identity:{primary}", primary_mention_id=primary,
+        mention_ids=[primary, *(mention_id(link.mention) for link in cluster.alternates)],
+        alternates=[IdentityLink(mention_id=mention_id(link.mention), relationship=link.relationship,
+                                 evidence=link.evidence) for link in cluster.alternates],
+        relationship=cluster.relationship,
+        possible_primary_ids=[mention_id(item) for item in cluster.possible_primaries[:8]],
+        possible_primary_count=len(cluster.possible_primaries), evidence=cluster.evidence,
+        uncertainty="uncertain" if cluster.possible_primaries else "proposed" if cluster.alternates else "unlinked",
+        status="pending" if cluster.alternates else "separate",
+    )
+
+
+def selected_mentions(review: Review, selection: ReleaseRequest) -> tuple[set[tuple[int, int]], set[Mention]]:
+    ranges: set[tuple[int, int]] = set()
+    kept: set[Mention] = set()
+    links = selection.links
+    expected = {mention_id(link.mention) for cluster in review.clusters.values() for link in cluster.alternates}
+    if links is None and "links" in selection.model_fields_set:
+        raise HTTPException(422, "Provide link decisions as an object.")
+    if links is not None and links.keys() != expected:
+        raise HTTPException(422, "Resolve every proposed link before release.")
+    for index, group in enumerate(review.groups):
+        cluster = review.clusters.get(group[0])
+        for item in group:
+            decision = selection.decisions[index]
+            if links is not None and cluster is not None and item != cluster.primary:
+                link = links[mention_id(item)]
+                if link.status == "confirm" and link.decision is not None:
+                    raise HTTPException(422, "A confirmed mention uses its identity decision.")
+                if link.status != "confirm":
+                    if link.decision is None:
+                        raise HTTPException(422, "Choose whether to redact or keep each separate mention.")
+                    decision = link.decision
+            if decision == "redact":
+                ranges.add((item.start, item.end))
+            elif links is not None and cluster is not None:
+                kept.add(item)
+    return ranges, kept
+
+
+def retained_ranges(kept: set[Mention]) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    for start, end, *_ in sorted(kept):
+        if ranges and start < ranges[-1][1]:
+            ranges[-1] = (ranges[-1][0], max(end, ranges[-1][1]))
+        else:
+            ranges.append((start, end))
+    return ranges
 
 
 @app.delete("/api/review", status_code=204)
@@ -188,12 +275,7 @@ async def release(request: Request, token: ReviewToken) -> JSONResponse:
         raise HTTPException(422, "The release decisions could not be read.") from None
     if selection.decisions.keys() != set(range(len(review.groups))):
         raise HTTPException(422, "Decide whether to redact or keep every candidate before release.")
-    ranges = {
-        (item.start, item.end)
-        for index, group in enumerate(review.groups)
-        if selection.decisions[index] == "redact"
-        for item in group
-    }
+    ranges, kept = selected_mentions(review, selection)
     for value in selection.manual:
         if not value.strip():
             raise HTTPException(422, "Enter a nonblank manual redaction.")
@@ -201,16 +283,34 @@ async def release(request: Request, token: ReviewToken) -> JSONResponse:
         if not pattern.search(review.text):
             raise HTTPException(422, "A manual redaction does not appear in the extracted text.")
         ranges.update(match.span(1) for match in pattern.finditer(review.text))
+    retained = retained_ranges(kept)
+    retained_ends = [end for _, end in retained]
+    if retained:
+        for start, end in ranges:
+            next_retained = bisect_right(retained_ends, start)
+            if next_retained < len(retained) and retained[next_retained][0] < end:
+                raise HTTPException(422, "An approved redaction overlaps a person mention marked Keep. Review the decisions.")
     sanitized, removed = redact(review.text, ranges)
+    allowed = {}
     try:
-        validate(sanitized, removed)
+        if retained and removed:
+            # First prove no residual value exists outside the explicitly kept spans.
+            masked, _ = redact(review.text, ranges.union(retained))
+            validate(masked, removed)
+            values = [canonical(review.text[start:end]) for start, end in retained]
+            allowed = {needle: sum(count_value(value, needle) for value in values) for needle in map(canonical, removed)}
+        validate(sanitized, removed, allowed=allowed)
         summary = summarize(sanitized)
-        validate(summary, removed)
+        try:
+            validate(summary, removed)
+        except ValueError:
+            validate(summary, removed, allowed=allowed)
+            summary = ""
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     pdf, pdf_error = None, None
     try:
-        pdf = base64.b64encode(export_pdf(sanitized, removed)).decode("ascii")
+        pdf = base64.b64encode(export_pdf(sanitized, removed, allowed=allowed)).decode("ascii")
     except ValueError as error:
         pdf_error = str(error)
     reviews.pop(token, None)
