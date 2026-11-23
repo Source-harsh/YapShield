@@ -2,9 +2,15 @@
 
 PrivyDoc is a local document review and redaction application for UTF-8 TXT and text-based PDF. It groups candidate mentions for human review, generates an extractive summary from sanitized text, and checks the release artifacts for approved values.
 
+## Architecture
+
+The React and TypeScript interface is built with Vite, styled with CSS and Tailwind, and uses Framer Motion for transitions. A Python FastAPI service runs on loopback under Uvicorn and serves the production frontend. PyMuPDF extracts PDF text and writes and verifies reflowed PDFs. The detector combines local rules with optional spaCy named-entity recognition.
+
+The browser sends the file to `/api/review`. The backend extracts text, detects candidate spans, and proposes document-local identity links. The browser submits mention decisions, link decisions, and manual redactions to `/api/preview`. The backend validates the spans and returns the preview and an opaque receipt. `/api/release` requires that receipt and the matching decisions. The browser downloads verified TXT and, when available, PDF bytes and a checked local extractive summary.
+
 ## Run on Windows
 
-Use Python 3.11 or newer and Node.js 20 or newer. From the repository root in PowerShell:
+Use Python 3.11 or newer and Node.js 20 or newer. Use Node.js 24 for the test commands below. From the repository root in PowerShell, create the environment, install dependencies, build the frontend, and start the loopback server:
 
 ```powershell
 python -m venv .venv
@@ -14,9 +20,13 @@ npm.cmd --prefix frontend run build
 .venv\Scripts\python.exe -m uvicorn privydoc.api:app --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-Open `http://127.0.0.1:8000`. For frontend development, run `npm.cmd --prefix frontend run dev` in a second terminal and use its printed URL. Vite proxies the API to port 8000.
+Open `http://127.0.0.1:8000`. For frontend development, keep the backend running and start Vite in a second PowerShell terminal from the repository root:
 
-Run the backend tests with `.venv\Scripts\python.exe -m pytest -q`. The frontend build also runs the TypeScript checker.
+```powershell
+npm.cmd --prefix frontend run dev
+```
+
+Open the loopback URL printed by Vite. The development server proxies `/api` to port 8000.
 
 ## Review and release
 
@@ -43,6 +53,7 @@ Confirm the proposed name links, approve each name and email mention, and add `Z
 - **Release** replaces approved spans in the extracted text. The API requires the receipt from the latest successful preview and binds it to the review decisions and manual redactions. It reopens the UTF-8 bytes served for download and checks for approved values and explicitly kept occurrences. Residual checks account for Unicode compatibility forms, case, whitespace, common punctuation, email obfuscation, and numeric separators.
 - **PDF export** typesets sanitized text into a fresh PDF. It drops the input's layout, images, annotations, attachments, and metadata. The exporter reopens the serialized bytes and checks extracted text, metadata, annotations, attachments, and the object and stream structure against the generated document. A verification failure blocks release. Unsupported characters and known layout limits leave verified TXT available. PDF uploads require extractable text on every page. PDF extraction sorts page text, so tables and columns can lose their intended reading order. Repeated headers and footers remain in the review.
 - **Summary** masks explicitly kept mentions in addition to approved redactions, verifies the resulting input, and uses the local extractive summarizer. The final summary is checked against its sanitized source, known values, local PII rules, and quasi-identifier signals such as age, location, job, and dates. A failed check withholds the summary. The checks can miss unfamiliar spellings, aliases, or identifying details that depend on context, and can suppress harmless summaries. Review downloaded content before sharing it.
+- **Privacy assumptions** include a trusted local machine and browser session. Keep the service bound to loopback. The review intentionally shows the extracted source in the browser. Explicit Keeps and values missed during review can appear in the downloaded document. Release verification checks the reviewer’s decisions and known residual forms. Summary checks are a separate filter and can withhold a summary even when the document is available for download.
 
 ## Detection coverage
 
@@ -53,7 +64,7 @@ Confirm the proposed name links, approve each name and email mention, and add `Z
 | Address | Numbered streets with common English suffixes, optional apartment/unit, and PO boxes. A US city/state/ZIP can follow after a comma or on the next line. |
 | Employee, account, and student IDs | Supported field labels followed by `:`, `=`, or `#`, then a 2–32 character identifier containing at least one digit. The rules exclude common dashed date shapes and dotted versions. |
 | Government ID | Hyphenated US SSNs after an `SSN` or `Social Security Number` label. Component checks catch invalid shapes. Unlabeled SSNs require manual review. |
-| Person | Capitalized multiword names after person labels or titles, plus multiword `PERSON` spans from the optional model. The detector links repeated full names, capitalized short forms, and dotted or undotted first initials with surnames. Shared short forms have their own review group. |
+| Person | Capitalized multiword names after person labels or titles, plus multiword `PERSON` spans from the optional model. The identity resolver proposes links for eligible short names and initials. Repeated full names and shared short forms can require separate decisions. |
 
 Offsets are zero-based Unicode code points with an exclusive end, relative to the normalized `text` in the review response. `line` is the one-based start line in that text, including for PDFs. Exact matches with the same entity type share one candidate and retain all distinct detector evidence. Conflicting types and partially overlapping spans remain reviewable. Person aliases inside structured values are suppressed to avoid spurious duplicate candidates.
 
@@ -77,9 +88,11 @@ To run the review tests on Windows, use the existing Python environment, Node.js
 
 ```powershell
 .venv\Scripts\python.exe -B -m pytest -q -p no:cacheprovider
+.\frontend\node_modules\.bin\tsc.cmd --noEmit --project frontend\tsconfig.json
 npm.cmd --prefix frontend run build
 node --test frontend/tests/review.test.mjs
 node --test frontend/tests/review.browser.mjs
+git diff --check
 ```
 
 Rules run locally on the CPU without model packages. To enable the optional model in an environment with compatible Python packages, install spaCy and its English model into the same virtual environment, then restart PrivyDoc:
@@ -119,3 +132,10 @@ Windows 11 build 26300, Ryzen 7 7735HS with 16 logical CPUs and approximately 15
 | 50 | 395.57 ms | 25.50 ms | 212.55 ms | 14.65 ms | 13.97 ms | 74.29 ms | 20.73 ms | 75.57 MiB |
 
 These measurements cover one active document at a time. Dense or compressed PDFs can consume native memory during parsing before the extracted-text limit is checked. Manual matching stops after 200,000 matches per request, including overlaps. For a manual fidelity check, preview a synthetic document with mixed orientations, two columns, and repeated headers. Check each page's reading order in the review, verify the downloaded text against the preview, and check that an unsupported character leaves verified TXT available.
+
+## Manual acceptance tests
+
+1. Open the built app and upload the TXT example above. Select a highlighted mention, read its evidence, and use the next and previous controls or `J` and `K`. Confirm one identity link and reject or detach another. Set each mention's release decision separately.
+2. Add a repeated email to the sample. Keep the first occurrence and use the exact-occurrence controls to approve the pending copy. Try adding the kept email as a manual redaction and confirm preview reports the overlap. Remove the conflicting manual entry, preview, change one decision, and confirm that release requires another preview.
+3. Repeat with a text-based PDF. Download TXT, PDF, and the summary when offered. Compare the visible text with the preview, search for the approved values, and check that explicitly kept values remain only where intended. If your PDF editor can add a synthetic metadata or annotation marker, check that it is absent from the downloaded PDF.
+4. Try opening a damaged PDF, then upload a valid file at a narrow viewport. Check that the error is readable, the workspace fits the viewport, and the source and candidate controls remain usable.

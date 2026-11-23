@@ -30,6 +30,15 @@ function launch(command, args, cwd) {
   return { child, log: () => log };
 }
 
+async function pdfFixture(action, first, second) {
+  const process = launch(python, ["-B", join(root, "tests/browser_pdf_fixture.py"), action, first, second], root);
+  const code = await new Promise((resolve, reject) => {
+    process.child.once("close", resolve);
+    process.child.once("error", reject);
+  });
+  assert.equal(code, 0, process.log());
+}
+
 async function connect(url) {
   const socket = new WebSocket(url);
   await new Promise((resolve, reject) => {
@@ -38,8 +47,10 @@ async function connect(url) {
   });
   let id = 0;
   const pending = new Map();
+  const listeners = new Map();
   socket.addEventListener("message", ({ data }) => {
     const reply = JSON.parse(data);
+    if (reply.method) listeners.get(reply.method)?.(reply.params);
     const request = pending.get(reply.id);
     if (!request) return;
     pending.delete(reply.id);
@@ -48,6 +59,7 @@ async function connect(url) {
   });
   return {
     close: () => socket.close(),
+    on: (method, listener) => listeners.set(method, listener),
     send(method, params = {}) {
       return new Promise((resolve, reject) => {
         pending.set(++id, { resolve, reject });
@@ -57,7 +69,7 @@ async function connect(url) {
   };
 }
 
-test("production review UI selects, navigates, previews, and releases precise mentions", { timeout: 45000 }, async (t) => {
+test("production review UI releases TXT and PDF through the complete workflow", { timeout: 60000 }, async (t) => {
   const scratch = await mkdtemp(join(tmpdir(), "privydoc-browser-"));
   const profile = join(scratch, "chrome");
   const input = join(scratch, "review.txt");
@@ -87,6 +99,9 @@ test("production review UI selects, navigates, previews, and releases precise me
     "Chromium did not start. Check PRIVYDOC_CHROME.");
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   page = await connect(targets.find(({ type }) => type === "page").webSocketDebuggerUrl);
+  const networkUrls = new Set();
+  page.on("Network.requestWillBeSent", ({ request }) => networkUrls.add(request.url));
+  await page.send("Network.enable");
   const evaluate = async (expression) => {
     const reply = await page.send("Runtime.evaluate", { expression, returnByValue: true });
     if (reply.exceptionDetails) throw new Error(reply.exceptionDetails.exception?.description ?? reply.exceptionDetails.text);
@@ -119,9 +134,12 @@ test("production review UI selects, navigates, previews, and releases precise me
 
   await page.send("Page.navigate", { url: origin });
   await waitForUi("!!document.querySelector('input[type=file]')");
-  const { root: documentNode } = await page.send("DOM.getDocument");
-  const { nodeId } = await page.send("DOM.querySelector", { nodeId: documentNode.nodeId, selector: "input[type=file]" });
-  await page.send("DOM.setFileInputFiles", { nodeId, files: [input] });
+  async function upload(file) {
+    const { root: documentNode } = await page.send("DOM.getDocument");
+    const { nodeId } = await page.send("DOM.querySelector", { nodeId: documentNode.nodeId, selector: "input[type=file]" });
+    await page.send("DOM.setFileInputFiles", { nodeId, files: [file] });
+  }
+  await upload(input);
   await waitForUi(`document.querySelectorAll('${rows}').length === 7`);
   assert.equal(await evaluate("document.querySelector('pre').textContent"), text);
   assert.equal(await evaluate(`document.querySelectorAll('${source}')[0].textContent`), "Jane Doe");
@@ -214,6 +232,11 @@ test("production review UI selects, navigates, previews, and releases precise me
   await press("r");
   await click(overlap);
   assert.notEqual(await evaluate(current), firstOverlap);
+  await press("s");
+  await click(".finish button");
+  await waitForUi("document.querySelector('[role=alert]')?.textContent.includes('overlaps a mention marked Keep')");
+  assert.equal(await evaluate(`!!document.querySelector("${preview}")`), false);
+  await click(`${rows}[aria-current=true]`);
   await press("r");
 
   await click(".finish button");
@@ -237,4 +260,149 @@ test("production review UI selects, navigates, previews, and releases precise me
     "The verified TXT download did not complete.",
   );
   assert.equal(downloaded, expected);
+
+  const malformed = join(scratch, "damaged.pdf");
+  await writeFile(malformed, "synthetic invalid PDF");
+  await click("button.secondary");
+  await waitForUi("!!document.querySelector('input[type=file]')");
+  await upload(malformed);
+  await waitForUi("document.querySelector('[role=alert]')?.textContent.includes('PDF')");
+  assert.equal(await evaluate("!!document.querySelector('.mention-list')"), false);
+
+  const pdfTextPath = join(scratch, "pdf-input.txt");
+  const pdfPath = join(scratch, "review.pdf");
+  const safeSentence = "The review team completed the audit and approved the public report.";
+  const address = "Flat B-12, Sector 17, Chandigarh 160017";
+  const pdfText = [
+    "Name: Élodie D’Arcy",
+    "E. D’Arcy filed it.",
+    "Élodie checked it.",
+    "Dr D’Arcy signed it.",
+    "Name: Elodie Darcy",
+    "Student ID: IITM_23CS104",
+    "Employee ID: IN-HR-04572",
+    `Address: ${address}`,
+    "Phone: +91 98765 43210",
+    "Copy: +91 98765 43210",
+    "Email: public@example.org",
+    "Copy: public@example.org",
+    safeSentence,
+  ].join("\n");
+  await writeFile(pdfTextPath, pdfText, "utf8");
+  await pdfFixture("create", pdfTextPath, pdfPath);
+
+  // Observe the actual requests and responses while forwarding them unchanged.
+  await evaluate(`(() => {
+    window.reviewCalls = [];
+    const fetchOriginal = window.fetch;
+    window.fetch = async (url, options) => {
+      const response = await fetchOriginal(url, options);
+      if (String(url).startsWith('/api/')) {
+        window.reviewCalls.push({
+          path: url, status: response.status, headers: options.headers,
+          body: typeof options.body === 'string' ? JSON.parse(options.body) : undefined,
+          response: response.status === 204 ? undefined : await response.clone().json(),
+        });
+      }
+      return response;
+    };
+  })()`);
+  await upload(pdfPath);
+  await waitForUi(`document.querySelector('pre')?.textContent.includes(${JSON.stringify(safeSentence)})`);
+  assert.equal((await evaluate("document.querySelector('pre').textContent")).trim(), pdfText);
+  const mentions = await evaluate(
+    `Array.from(document.querySelectorAll('${rows}'), button => ({ id: button.id, text: button.firstElementChild.textContent }))`,
+  );
+  const textFor = (value) => mentions.find(({ text }) => text === value);
+  const choose = async (mention) => {
+    assert.ok(mention, "Expected mention is missing");
+    await click(`[id="${mention.id}"]`);
+  };
+  const decide = async (mention, key) => {
+    await choose(mention);
+    await press(key);
+  };
+  await choose(textFor("Élodie D’Arcy"));
+  assert.match(await evaluate("document.querySelector('.mention-detail').textContent"), /Context rule/);
+
+  const aliases = [["E. D’Arcy", 1, "r"], ["Élodie", 2, "s"], ["Dr D’Arcy", 3, "r"]];
+  const aliasValues = aliases.map(([value]) => value);
+  const phones = mentions.filter(({ text }) => text === "+91 98765 43210");
+  const emails = mentions.filter(({ text }) => text === "public@example.org");
+  assert.equal(phones.length, 2);
+  assert.equal(emails.length, 2);
+  for (const mention of mentions.filter(({ text }) => ![...aliasValues, phones[0].text, emails[0].text].includes(text))) {
+    await decide(mention, "r");
+  }
+  for (const [value, link, key] of aliases) {
+    await decide(textFor(value), key);
+    await click(`[aria-label='Identity link decision'] button:nth-child(${link})`);
+  }
+  await choose(phones[0]);
+  await click(".mention-detail details summary");
+  await click(".mention-detail details .controls button:first-child");
+  await decide(emails[0], "s");
+  await decide(emails[1], "r");
+  await evaluate(`(() => {
+    const field = document.querySelector('textarea');
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(field, ${JSON.stringify(address)});
+    field.dispatchEvent(new Event('input', {bubbles:true}));
+  })()`);
+  await click(".manual .controls button:first-of-type");
+
+  await click(".finish button");
+  await waitForUi(`!!document.querySelector("${preview}")`);
+  const pdfPreview = await evaluate(`document.querySelector("${preview} pre").textContent`);
+  const expectedPdf = [
+    "Name: [REDACTED]", "[REDACTED] filed it.", "Élodie checked it.", "[REDACTED] signed it.", "Name: [REDACTED]",
+    "Student ID: [REDACTED]", "Employee ID: [REDACTED]", "Address: [REDACTED]", "Phone: [REDACTED]",
+    "Copy: [REDACTED]", "Email: public@example.org", "Copy: [REDACTED]", safeSentence,
+  ].join("\n");
+  assert.equal(pdfPreview.trim(), expectedPdf);
+  await click(`${preview} button`);
+  await waitForUi("document.querySelector('.workspace h2')?.textContent === 'Sanitized document'");
+  const calls = await evaluate("window.reviewCalls");
+  const previewCall = calls.find(({ path }) => path === "/api/preview");
+  const releaseCall = calls.find(({ path }) => path === "/api/release");
+  assert.equal(releaseCall.status, 200);
+  assert.deepEqual(releaseCall.body, previewCall.body);
+  assert.equal(releaseCall.headers["X-Preview-Receipt"], previewCall.response.receipt);
+  assert.deepEqual(releaseCall.body.manual, [address]);
+  assert.deepEqual(Object.values(releaseCall.body.links).map(({ status }) => status).sort(), ["confirm", "detach", "reject"]);
+  assert.equal(releaseCall.response.text, pdfPreview);
+  assert.match(releaseCall.response.summary, /approved the public report/);
+  assert.doesNotMatch(releaseCall.response.summary, /Élodie|Darcy|D’Arcy|example\.org|Chandigarh|SYNTHETIC_HIDDEN/);
+  const downloads = join(scratch, "pdf-downloads");
+  await page.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: downloads });
+  for (const [selector, filename] of [
+    [".workspace .panel:first-child .exports button:first-child", "sanitized.txt"],
+    [".workspace .panel:first-child .exports button:nth-child(2)", "sanitized.pdf"],
+    [".workspace .panel:nth-child(2) .exports button", "summary.txt"],
+  ]) {
+    await click(selector);
+    const content = await waitFor(() => readFile(join(downloads, filename)).catch(() => null), `Missing ${filename}`);
+    const field = { "sanitized.txt": "txt", "sanitized.pdf": "pdf", "summary.txt": "summary" }[filename];
+    assert.deepEqual(content, Buffer.from(releaseCall.response[field], field === "summary" ? "utf8" : "base64"));
+  }
+  await pdfFixture("check", join(downloads, "sanitized.pdf"), join(downloads, "sanitized.txt"));
+
+  const leakageInput = join(scratch, "summary-privacy.txt");
+  const hiddenEmail = "demo＠example.org";
+  await writeFile(leakageInput, `Internal reference: ZX99\nPlease notify the entire support group through ${hiddenEmail} immediately.`, "utf8");
+  await click("button.secondary");
+  await waitForUi("!!document.querySelector('input[type=file]')");
+  await upload(leakageInput);
+  await waitForUi("document.querySelector('pre')?.textContent.includes('ZX99')");
+  await click("textarea");
+  for (const key of "ZX99") await press(key);
+  await click(".manual .controls button:first-of-type");
+  await click(".finish button");
+  await waitForUi(`!!document.querySelector("${preview}")`);
+  await click(`${preview} button`);
+  await waitForUi("document.querySelector('.workspace h2')?.textContent === 'Sanitized document'");
+  assert.match(await evaluate("document.querySelector('.workspace pre').textContent"), /\[REDACTED\]/);
+  assert.ok((await evaluate("document.querySelector('.workspace pre').textContent")).includes(hiddenEmail));
+  assert.match(await evaluate("document.querySelector('.workspace .panel:nth-child(2)').textContent"), /No summary is available/);
+  assert.equal(await evaluate("!!document.querySelector('.workspace .panel:nth-child(2) .exports button')"), false);
+  assert.deepEqual([...networkUrls].filter((url) => /^https?:/.test(url) && new URL(url).origin !== origin), []);
 });
