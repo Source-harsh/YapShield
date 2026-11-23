@@ -22,7 +22,8 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .detection import MAX_CANDIDATES, Mention, detect_mentions
 from .documents import (
-    PdfLayoutError, canonical, count_value, export_pdf, extract, redact, residual_key, summarize, validate, verify_txt,
+    MAX_TEXT, PdfLayoutError, canonical, count_value, export_pdf, extract, redact, residual_key, summarize, validate,
+    verify_txt,
 )
 from .identity import Cluster, Relationship, mention_id, resolve
 from .summary_privacy import check_summary
@@ -30,6 +31,7 @@ from .summary_privacy import check_summary
 MAX_BYTES = 8 * 1024 * 1024
 TTL_SECONDS = 15 * 60
 MAX_REVIEWS = 8
+MAX_MANUAL_MATCHES = 2 * MAX_TEXT
 DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
 
 
@@ -281,12 +283,14 @@ async def discard_review(token: ReviewToken) -> Response:
     return Response(status_code=204)
 
 
-async def read_selection(request: Request, token: str) -> tuple[Review, ReleaseRequest]:
+async def read_selection(request: Request, token: str, *, invalidate_preview: bool = False) -> tuple[Review, ReleaseRequest]:
     body = await bounded_body(request, 160 * 1024)
     expire_reviews()
     review = reviews.get(token)
     if review is None:
         raise HTTPException(404, "This review expired or was closed. Upload a fresh copy.")
+    if invalidate_preview:
+        review.preview = None
     try:
         return review, ReleaseRequest.model_validate_json(body)
     except ValueError:
@@ -305,13 +309,18 @@ class PreparedRelease:
 
 def prepare_redactions(review: Review, selection: ReleaseRequest) -> PreparedRelease:
     ranges, kept = selected_mentions(review, selection)
+    manual_matches = 0
     for value in selection.manual:
         if not value.strip():
             raise HTTPException(422, "Enter a nonblank manual redaction.")
         pattern = re.compile(r"(?=(" + re.escape(value) + r"))", re.IGNORECASE)
         if not pattern.search(review.text):
             raise HTTPException(422, "A manual redaction does not appear in the extracted text.")
-        ranges.update(match.span(1) for match in pattern.finditer(review.text))
+        for match in pattern.finditer(review.text):
+            manual_matches += 1
+            if manual_matches > MAX_MANUAL_MATCHES:
+                raise HTTPException(422, "Manual redactions have too many matches. Use fewer or more specific values.")
+            ranges.add(match.span(1))
     retained = retained_ranges(kept)
     retained_ends = [end for _, end in retained]
     if retained:
@@ -347,8 +356,7 @@ def selection_digest(selection: ReleaseRequest) -> bytes:
 
 @app.post("/api/preview")
 async def preview(request: Request, token: ReviewToken) -> dict[str, str]:
-    review, selection = await read_selection(request, token)
-    review.preview = None
+    review, selection = await read_selection(request, token, invalidate_preview=True)
     prepared = prepare_redactions(review, selection)
     receipt = secrets.token_urlsafe(32)
     review.preview = receipt, selection_digest(selection)

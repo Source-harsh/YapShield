@@ -33,5 +33,25 @@
     "id": "sparse-record",
     "text": "Name: Rowan Park\nEmail: feedback@example.com\nStudent ID: 5201034\nEmployee ID: STAFF_52\nShip to PO Box 410, Boston, MA 02108. This park has excellent trails.",
     "entities": [["Person", "Rowan Park"], ["Email", "feedback@example.com"], ["Student ID", "5201034"], ["Employee ID", "STAFF_52"], ["Address", "PO Box 410, Boston, MA 02108"]]
+  },
+  {
+    "id": "india-campus-register",
+    "text": "Name: Kavya Menon\nK. Menon submitted the form.\nStudent ID: IITM_23CS104\nMobile: +91-98765-43210\nAddress: Flat B-12, 8 Lake Road, Indiranagar, Bengaluru 560038\nEmail: kavya.menon(at)campus(dot)example",
+    "entities": [["Person", "Kavya Menon"], ["Person", "K. Menon"], ["Student ID", "IITM_23CS104"], ["Phone", "+91-98765-43210"], ["Address", "Flat B-12, 8 Lake Road, Indiranagar, Bengaluru 560038"], ["Email", "kavya.menon(at)campus(dot)example"]]
+  },
+  {
+    "id": "india-employment-record",
+    "text": "Name: Nikhil Rao\nEmployee ID: IN-HR-04572\nEmployee No: 007215\nOffice landline: +91 80 2650 4321\nMobile: 09876543210\nAddress: Plot 42, Sector 17, Chandigarh 160017\nWork email: nikhil.rao [at] office [dot] example",
+    "entities": [["Person", "Nikhil Rao"], ["Employee ID", "IN-HR-04572"], ["Employee ID", "007215"], ["Phone", "+91 80 2650 4321"], ["Phone", "09876543210"], ["Address", "Plot 42, Sector 17, Chandigarh 160017"], ["Email", "nikhil.rao [at] office [dot] example"]]
+  },
+  {
+    "id": "unicode-initials-and-markers",
+    "text": "Name: Zoë Jean D’Arcy\nZ. J. D’Arcy reviewed the form.\nName: Nguyễn Thu Hà\nN. Hà approved the update.\nReply to zoe (at) example (dot) org or thu＠example.org.",
+    "entities": [["Person", "Zoë Jean D’Arcy"], ["Person", "Z. J. D’Arcy"], ["Person", "Nguyễn Thu Hà"], ["Person", "N. Hà"], ["Email", "zoe (at) example (dot) org"], ["Email", "thu＠example.org"]]
+  },
+  {
+    "id": "india-inventory-negatives",
+    "text": "Product Code: EMP-2026. Batch ID: IN-HR-04572. Release date: 2026-11-23, then 23-11-2026. Plain quantities: 560038 and 9876543210. The stock identifier 202-555-0131 is a legacy catalog code. Product Name: Bright River.",
+    "entities": []
   }
 ]

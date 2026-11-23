@@ -7,6 +7,7 @@ from statistics import median
 from time import perf_counter
 
 from privydoc import detection
+from privydoc.identity import resolve
 
 DATASET = Path(__file__).with_name("pii_synthetic.json")
 
@@ -60,12 +61,11 @@ def main():
     durations = []
     for _ in range(args.runs):
         start = perf_counter()
-        predicted = {
-            (doc, item.kind, item.start, item.end)
-            for doc, text in texts.items()
-            for group in detection.detect(text, use_nlp=not args.rules_only)
-            for item in group
-        }
+        predicted = set()
+        for doc, text in texts.items():
+            mentions = detection.detect_mentions(text, use_nlp=not args.rules_only)
+            groups, _ = resolve(text, mentions)
+            predicted.update((doc, item.kind, item.start, item.end) for group in groups for item in group)
         durations.append((perf_counter() - start) * 1000)
 
     def describe(spans):

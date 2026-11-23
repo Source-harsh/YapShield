@@ -22,8 +22,12 @@ def extract(data: bytes, pdf: bool) -> str:
     if pdf:
         try:
             with pymupdf.open(stream=data, filetype="pdf") as doc:
+                if not doc.is_pdf or doc.is_repaired:
+                    raise ValueError("The PDF is invalid or damaged. Save a clean PDF copy and try again.")
                 if doc.needs_pass or doc.page_count > MAX_PAGES:
                     raise ValueError("Use an unlocked PDF of at most 100 pages.")
+                if not doc.page_count:
+                    raise ValueError("The PDF contains no pages.")
                 pages: list[str] = []
                 size = 0
                 for page in doc:
@@ -152,26 +156,42 @@ def export_pdf(sanitized: str, removed: set[str], **checks: dict[str, int]) -> b
     if any(not font.has_glyph(ord(char), fallback=False) for char in set(sanitized) if not char.isspace()):
         raise PdfLayoutError("The PDF font cannot represent the text. The verified TXT is available.")
     lines: list[str] = []
+    word_widths: dict[str, float] = {}
+    space_width = font.text_length(" ", fontsize=size)
     for paragraph in sanitized.expandtabs(4).splitlines():
         line = ""
+        line_width = 0.0
         for word in paragraph.split():
-            if font.text_length(word, fontsize=size) > width:
+            word_width = word_widths.get(word)
+            if word_width is None:
+                word_width = word_widths[word] = font.text_length(word, fontsize=size)
+            if word_width > width:
                 raise PdfLayoutError("A word is too wide for PDF export. The verified TXT is available.")
-            candidate = f"{line} {word}" if line else word
-            if font.text_length(candidate, fontsize=size) > width:
+            if line and line_width + space_width + word_width > width:
                 lines.append(line)
-                line = word
+                line = ""
+            if line:
+                line += f" {word}"
+                line_width += space_width + word_width
             else:
-                line = candidate
+                line = word
+                line_width = word_width
         if line or (lines and lines[-1]):
             lines.append(line)
         if len(lines) > MAX_PAGES * 46:
             raise PdfLayoutError("The reflowed PDF exceeds 100 pages. The verified TXT is available.")
+    try:
+        # Pass only generated hex operands to PyMuPDF. Its simple font path
+        # uses byte codes and otherwise interprets bracketed hex as already encoded.
+        encoded_lines = [f"[<{line.encode('cp1252').hex()}>]" for line in lines]
+    except UnicodeEncodeError as error:
+        raise PdfLayoutError("The PDF font cannot represent the text. The verified TXT is available.") from error
     with pymupdf.open() as document:
         for offset in range(0, max(1, len(lines)), 46):
             page = document.new_page(width=612, height=792)
-            for index, line in enumerate(lines[offset : offset + 46]):
-                page.insert_text((56, 60 + index * 15), line, fontsize=size, fontname="helv")
+            page_lines = encoded_lines[offset : offset + 46]
+            if page_lines:
+                page.insert_text((56, 60), page_lines, fontsize=size, fontname="helv", lineheight=15 / size)
         expected_objects = pdf_objects(document)
         payload = serialize_pdf(document)
     with pymupdf.open(stream=payload, filetype="pdf") as reopened:

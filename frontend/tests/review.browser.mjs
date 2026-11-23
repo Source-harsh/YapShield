@@ -228,4 +228,13 @@ test("production review UI selects, navigates, previews, and releases precise me
   await click(`${preview} button`);
   await waitForUi("document.querySelector('.workspace h2')?.textContent === 'Sanitized document'");
   assert.equal(await evaluate("document.querySelector('.workspace pre').textContent"), expected);
+  assert.match(await evaluate("document.querySelector('.workspace .panel').textContent"), /verified TXT/);
+  assert.equal(await evaluate("Array.from(document.querySelectorAll('.workspace button')).some(button => button.textContent === 'Download PDF')"), false);
+  await page.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: scratch });
+  await click(".workspace .exports button");
+  const downloaded = await waitFor(
+    () => readFile(join(scratch, "sanitized.txt"), "utf8").catch(() => ""),
+    "The verified TXT download did not complete.",
+  );
+  assert.equal(downloaded, expected);
 });

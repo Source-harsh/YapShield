@@ -41,7 +41,7 @@ Confirm the proposed name links, approve each name and email mention, and add `Z
 - **Detection** combines deterministic patterns, an optional local English spaCy NER model, and span-level evidence. The review response includes a candidate ID, entity type, evidence list, and offsets for each mention. Existing group IDs, approve/keep decisions, and manual redactions use the same workflow.
 - **Review lifecycle** uses opaque tokens and an in-process store capped at eight active reviews. Reviews expire after 15 minutes and are removed on discard or successful release. The backend streams uploads with a size limit and keeps the bytes in memory during extraction. The frontend holds review data in React state and requests no-store responses. There is no external inference, upload persistence, or application logging of source text. Use a single loopback worker. Process memory, browser memory, and OS paging have their usual retention characteristics.
 - **Release** replaces approved spans in the extracted text. The API requires the receipt from the latest successful preview and binds it to the review decisions and manual redactions. It reopens the UTF-8 bytes served for download and checks for approved values and explicitly kept occurrences. Residual checks account for Unicode compatibility forms, case, whitespace, common punctuation, email obfuscation, and numeric separators.
-- **PDF export** typesets sanitized text into a fresh PDF. It drops the input's layout, images, annotations, attachments, and metadata. The exporter reopens the serialized bytes and checks extracted text, metadata, annotations, attachments, and the object and stream structure against the generated document. A verification failure blocks release. Known font and layout limits leave verified TXT available. PDF uploads require extractable text on every page.
+- **PDF export** typesets sanitized text into a fresh PDF. It drops the input's layout, images, annotations, attachments, and metadata. The exporter reopens the serialized bytes and checks extracted text, metadata, annotations, attachments, and the object and stream structure against the generated document. A verification failure blocks release. Unsupported characters and known layout limits leave verified TXT available. PDF uploads require extractable text on every page. PDF extraction sorts page text, so tables and columns can lose their intended reading order. Repeated headers and footers remain in the review.
 - **Summary** masks explicitly kept mentions in addition to approved redactions, verifies the resulting input, and uses the local extractive summarizer. The final summary is checked against its sanitized source, known values, local PII rules, and quasi-identifier signals such as age, location, job, and dates. A failed check withholds the summary. The checks can miss unfamiliar spellings, aliases, or identifying details that depend on context, and can suppress harmless summaries. Review downloaded content before sharing it.
 
 ## Detection coverage
@@ -98,6 +98,24 @@ The model is loaded once per process on demand. Missing packages or a model load
 .venv\Scripts\python.exe -B -m evaluation.measure_detection
 ```
 
-The evaluator uses the Phase 2 detection interface and scores unique `(document, entity type, start, end)` tuples against the labeled synthetic corpus. Partial matches and incorrect types count as both a false positive and a false negative. The report includes micro-averaged and per-entity metrics, mismatch details, and detector-only timings. Model startup is timed separately. The second command reports which model, if any, actually ran. Identity linking and reviewer decisions are covered separately by the identity regression tests.
+The evaluator uses the same detector and identity resolver as upload and scores unique `(document, entity type, start, end)` tuples against the labeled synthetic corpus. Partial matches and incorrect types count as both a false positive and a false negative. The report includes micro-averaged and per-entity metrics, mismatches, and pipeline timing. Model startup is timed separately. The second command reports which model, if any, actually ran.
 
-The measured Windows rules-only baseline on seven synthetic documents (1,112 characters) was **29 true positives, 0 false positives, and 2 false negatives**. Precision was **100.00%**, recall **93.55%**, and F1 **96.67%**. The first pass took **3.58 ms**, and the median over 30 corpus passes was **1.65 ms**. The misses were an unlabeled person name in prose and a German `+49` number. These results describe this small corpus. Coverage for unseen documents, memory at the upload limit, and optional model performance require separate measurements.
+On the expanded 11-document corpus (1,896 characters), rules-only review produced **44 true positives, 2 false positives, and 6 false negatives**. Precision was **95.65%**, recall was **88.00%**, and F1 was **91.67%**. The median over 30 corpus passes was **3.89 ms**. Misses included two Indian addresses, a locally formatted Indian mobile number, a German number, an unlabeled name, and an email written with a fullwidth at sign. These results describe the synthetic corpus and do not estimate real-world accuracy.
+
+## Release performance benchmark
+
+```powershell
+.venv\Scripts\python.exe -B -m evaluation.benchmark_release
+```
+
+The benchmark runs each size in a fresh CPU-only process and reports the median and maximum over five timed iterations after one warm-up. It uses synthetic text PDFs and the application code for extraction, detection, identity resolution, preview preparation, verified artifact generation, and checked summary generation. It excludes fixture generation, HTTP transfer, and browser rendering from the timings. Process peak RSS includes startup and native PDF memory.
+
+Windows 11 build 26300, Ryzen 7 7735HS with 16 logical CPUs and approximately 15.31 GiB of reported physical RAM, Python 3.13.2, PyMuPDF 1.28.2, and FastAPI 0.165.0.
+
+| Input pages | Extract | Detect | Resolve | Preview | TXT | PDF | Summary | Peak process RSS |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 8.66 ms | 0.54 ms | 4.18 ms | 0.30 ms | 0.26 ms | 5.08 ms | 0.64 ms | 70.86 MiB |
+| 10 | 81.85 ms | 5.24 ms | 42.47 ms | 2.73 ms | 2.53 ms | 18.17 ms | 4.06 ms | 71.95 MiB |
+| 50 | 395.57 ms | 25.50 ms | 212.55 ms | 14.65 ms | 13.97 ms | 74.29 ms | 20.73 ms | 75.57 MiB |
+
+These measurements cover one active document at a time. Dense or compressed PDFs can consume native memory during parsing before the extracted-text limit is checked. Manual matching stops after 200,000 matches per request, including overlaps. For a manual fidelity check, preview a synthetic document with mixed orientations, two columns, and repeated headers. Check each page's reading order in the review, verify the downloaded text against the preview, and check that an unsupported character leaves verified TXT available.
